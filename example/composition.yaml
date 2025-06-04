@@ -12,8 +12,8 @@ spec:
     functionRef:
       name: function-claude-status-transformer
     input:
-      apiVersion: claude.fn.crossplane.io/v1beta1
-      kind: Input
+      apiVersion: function-claude-status-transformer.fn.crossplane.io/v1beta1
+      kind: StatusTransformation
       additionalContext: ""
     credentials:
     - name: claude
