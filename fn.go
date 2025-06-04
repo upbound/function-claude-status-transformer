@@ -2,59 +2,394 @@ package main
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
+	"strings"
+	"text/template"
+
+	"github.com/anthropics/anthropic-sdk-go"
+	"github.com/anthropics/anthropic-sdk-go/option"
+	"github.com/anthropics/anthropic-sdk-go/packages/param"
+	"github.com/tidwall/gjson"
+	"google.golang.org/protobuf/encoding/protojson"
+	"k8s.io/utils/ptr"
 
 	"github.com/crossplane/function-sdk-go/errors"
 	"github.com/crossplane/function-sdk-go/logging"
 	fnv1 "github.com/crossplane/function-sdk-go/proto/v1"
 	"github.com/crossplane/function-sdk-go/request"
+	"github.com/crossplane/function-sdk-go/resource"
 	"github.com/crossplane/function-sdk-go/response"
 	"github.com/crossplane/function-template-go/input/v1beta1"
 )
 
-// Function returns whatever response you ask it to.
+const (
+	credName = "claude"
+	credKey  = "ANTHROPIC_API_KEY"
+)
+
+const system = `
+You are a Kubernetes operator trained in identifying and fixing issues with 
+Kubernetes resources. You will be given a set of composed Kubernetes resources, 
+some of which may be in a bad state. Your job is to identify the issues present 
+on each of the resources in the context of the full set of resources and 
+communicate these issues to the user.
+`
+
+const prompt = `
+<instructions>
+Please follow these instructions carefully:
+
+1. Analyze the provided set of composed resources searching for any resources
+   that are in an unhealthy state. Use the status.conditions field to determine
+   the status of the resource.
+
+2. For each resource that is in an unhealthy state, provide a succinct,
+   human-readable explanation of the issue. Only include resources that are 
+   unhealthy. Use the metadata.name and namespace field to identify the 
+   resource.
+
+3. If there are no unhealthy resources, output an empty "resourceStatuses"
+   array, an "overallStatus" of "Ready", and a summary of "No unhealthy
+   resources found".
+
+4. For each explanation, provide a JSON object with the structure shown below in
+   the <example> tag. Submit the JSON object to the submit_status tool.
+</instructions>
+
+<example>
+{
+	"resourceStatuses": [{
+		"name": [resource-name],
+		"namespace": [resource-namespace],
+		"kind": [resource-kind],
+		"apiVersion": [resource-apiVersion],
+		"ready": [true|false],
+		"message": [human-friendly-explanation-of-problems]
+	}],
+	"overallStatus": ["Ready"|"NotReady],
+	"summary": [summary-of-problems]
+}
+</example>
+`
+
+const vars = `
+Here are the newly composed resources:
+
+<composite>
+{{ .Composite }}
+</composite>
+
+If there are any existing composed resources, they will be provided here:
+
+<composed>
+{{ .Composed }}
+</composed>
+
+Additional input provided by the Kubernetes operator is provided here:
+
+<input>
+{{ .Input }}
+</input>
+`
+
+const (
+	submitStatusToolName             = "submit_status"
+	submitStatusToolSchemaProperties = `{"status_json":{"type": "string","description":"The status object, represented in JSON, to submit"}}`
+	submitStatusToolDescription      = `
+Accepts a JSON object containing a status object. Must be valid JSON in the
+shape supplied in the <example> tag.
+`
+)
+
+var marshaler = protojson.MarshalOptions{
+	UseProtoNames:   true,
+	EmitUnpopulated: false,
+	UseEnumNumbers:  false,
+}
+
+// composedResourceStatus is the status of a composed resource as reported by
+// Claude. It contains the name of the resource, whether it's ready (which
+// should always be false), and a human-readable explanation of the problems.
+type composedResourceStatus struct {
+	Name       string `json:"name"`
+	Namespace  string `json:"namespace,omitempty"`
+	Kind       string `json:"kind"`
+	APIVersion string `json:"apiVersion"`
+	Ready      bool   `json:"ready"`
+	Message    string `json:"message"`
+}
+
+// compositionStatus is the status of the composition as reported by Claude. It
+// contains the status of each composed resource, the overall status of the
+// composition, and a summary of the problems.
+type compositionStatus struct {
+	ResourceStatuses []composedResourceStatus `json:"resourceStatuses"`
+	OverallStatus    string                   `json:"overallStatus"`
+	Summary          string                   `json:"summary"`
+}
+
+// Variables used to form the prompt.
+type Variables struct {
+	// Observed composite resource, as a YAML manifest.
+	Composite string
+
+	// Observed composed resources, as a stream of YAML manifests.
+	Composed string
+
+	// Input - i.e. user prompt.
+	Input string
+}
+
+// Function asks Claude to compose resources.
 type Function struct {
 	fnv1.UnimplementedFunctionRunnerServiceServer
 
-	log logging.Logger
+	vars *template.Template
+	log  logging.Logger
+}
+
+// NewFunction creates a new function powered by Claude.
+func NewFunction(log logging.Logger) *Function {
+	return &Function{
+		log:  log,
+		vars: template.Must(template.New("vars").Parse(vars)),
+	}
 }
 
 // RunFunction runs the Function.
-func (f *Function) RunFunction(_ context.Context, req *fnv1.RunFunctionRequest) (*fnv1.RunFunctionResponse, error) {
-	f.log.Info("Running function", "tag", req.GetMeta().GetTag())
+func (f *Function) RunFunction(ctx context.Context, req *fnv1.RunFunctionRequest) (*fnv1.RunFunctionResponse, error) { //nolint:gocyclo // TODO(negz): Factor out the API calling bits.
+	log := f.log.WithValues("tag", req.GetMeta().GetTag())
+	log.Info("Running function", "tag", req.GetMeta().GetTag())
 
 	rsp := response.To(req, response.DefaultTTL)
 
 	in := &v1beta1.Input{}
 	if err := request.GetInput(req, in); err != nil {
-		// You can set a custom status condition on the claim. This allows you to
-		// communicate with the user. See the link below for status condition
-		// guidance.
-		// https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/api-conventions.md#typical-status-properties
-		response.ConditionFalse(rsp, "FunctionSuccess", "InternalError").
-			WithMessage("Something went wrong.").
-			TargetCompositeAndClaim()
-
-		// You can emit an event regarding the claim. This allows you to communicate
-		// with the user. Note that events should be used sparingly and are subject
-		// to throttling; see the issue below for more information.
-		// https://github.com/crossplane/crossplane/issues/5802
-		response.Warning(rsp, errors.New("something went wrong")).
-			TargetCompositeAndClaim()
-
 		response.Fatal(rsp, errors.Wrapf(err, "cannot get Function input from %T", req))
 		return rsp, nil
 	}
 
-	// TODO: Add your Function logic here!
-	response.Normalf(rsp, "I was run with input %q!", in.Example)
-	f.log.Info("I was run!", "input", in.Example)
+	c, err := request.GetCredentials(req, credName)
+	if err != nil {
+		response.Fatal(rsp, errors.Wrapf(err, "cannot get Anthropic API key from credential %q", credName))
+		return rsp, nil
+	}
+	if c.Type != resource.CredentialsTypeData {
+		response.Fatal(rsp, errors.Errorf("expected credential %q to be %q, got %q", credName, resource.CredentialsTypeData, c.Type))
+		return rsp, nil
+	}
+	b, ok := c.Data[credKey]
+	if !ok {
+		response.Fatal(rsp, errors.Errorf("credential %q is missing required key %q", credName, credKey))
+		return rsp, nil
+	}
 
-	// You can set a custom status condition on the claim. This allows you to
-	// communicate with the user. See the link below for status condition
-	// guidance.
-	// https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/api-conventions.md#typical-status-properties
-	response.ConditionTrue(rsp, "FunctionSuccess", "Success").
-		TargetCompositeAndClaim()
+	// TODO(negz): Where the heck is the newline at the end of this key
+	// coming from? Bug in crossplane render?
+	key := strings.Trim(string(b), "\n")
 
+	xr, err := marshaler.Marshal(req.GetObserved().GetComposite())
+	if err != nil {
+		response.Fatal(rsp, errors.Wrap(err, "cannot convert observed XR to YAML"))
+		return rsp, nil
+	}
+
+	cds, err := ProtoMapToJSON(req.GetObserved().GetResources())
+	if err != nil {
+		response.Fatal(rsp, errors.Wrap(err, "cannot convert observed composed resources to YAML"))
+		return rsp, nil
+	}
+
+	vars := &strings.Builder{}
+	if err := f.vars.Execute(vars, &Variables{Composite: string(xr), Composed: cds, Input: in.AdditionalContext}); err != nil {
+		response.Fatal(rsp, errors.Wrapf(err, "cannot build prompt from template"))
+		return rsp, nil
+	}
+
+	log.Debug("Using prompt", "prompt", vars.String())
+
+	client := anthropic.NewClient(option.WithAPIKey(key))
+
+	messages := []anthropic.MessageParam{
+		{
+			Role: anthropic.MessageParamRoleUser,
+			Content: []anthropic.ContentBlockParamUnion{
+				{
+					OfText: &anthropic.TextBlockParam{
+						Text:         prompt,
+						CacheControl: anthropic.NewCacheControlEphemeralParam(),
+					},
+				},
+			},
+		},
+		{
+			Role: anthropic.MessageParamRoleUser,
+			Content: []anthropic.ContentBlockParamUnion{
+				{
+					OfText: &anthropic.TextBlockParam{
+						Text: vars.String(),
+					},
+				},
+			},
+		},
+	}
+	for {
+		message, err := client.Messages.New(ctx, anthropic.MessageNewParams{
+			MaxTokens: 1024,
+			Model:     anthropic.ModelClaudeSonnet4_0,
+			System: []anthropic.TextBlockParam{
+				{
+					Text:         system,
+					CacheControl: anthropic.NewCacheControlEphemeralParam(),
+				},
+			},
+			Temperature: param.Opt[float64]{Value: 0}, // As little randomness as possible.
+			Tools: []anthropic.ToolUnionParam{
+				{
+					OfTool: &anthropic.ToolParam{
+						Name:        submitStatusToolName,
+						Description: anthropic.String(submitStatusToolDescription),
+						InputSchema: anthropic.ToolInputSchemaParam{
+							Properties: map[string]any{
+								"status_stream": map[string]any{
+									"type":        "string",
+									"description": "The status stream, represented in JSON, to submit",
+								},
+							},
+						},
+					},
+				},
+			},
+			Messages: messages,
+		})
+		if err != nil {
+			response.Fatal(rsp, errors.Wrapf(err, "cannot message Claude"))
+			return rsp, nil
+		}
+
+		// Save Claude's response, to feed back to it on the next call.
+		messages = append(messages, message.ToParam())
+
+		toolResults := []anthropic.ContentBlockParamUnion{}
+		for _, block := range message.Content {
+			switch block.AsAny().(type) {
+
+			// This could happen several times, as Claude calls the
+			// tool to check whether its YAML is valid.
+			case anthropic.ToolUseBlock:
+				log.Debug("Got tool use block from Claude", "tool_name", block.Name, "tool_input", block.JSON.Input.Raw())
+
+				switch block.Name {
+				case submitStatusToolName:
+					y := gjson.Get(block.JSON.Input.Raw(), "status_stream").String()
+					if y == "" {
+						response.Fatal(rsp, errors.Errorf("Claude didn't provide 'status_stream' input property for %q tool", block.Name))
+						return rsp, nil
+					}
+
+					var status compositionStatus
+					result := ""
+					if err := json.Unmarshal([]byte(y), &status); err != nil {
+						result = err.Error()
+					} else {
+						log.Debug("Received composition status from Claude",
+							"overallStatus", status.OverallStatus,
+							"summary", status.Summary,
+							"resourceCount", len(status.ResourceStatuses))
+
+						jsonStatuses, err := json.Marshal(status.ResourceStatuses)
+						if err != nil {
+							response.Fatal(rsp, errors.Wrap(err, "cannot marshal resource statuses to JSON"))
+							return rsp, nil
+						}
+
+						cond := &fnv1.Condition{
+							Type:    "ClaudeSummarizedStatus",
+							Message: &status.Summary,
+							Reason:  string(jsonStatuses),
+						}
+
+						if status.OverallStatus == "Ready" {
+							cond.Status = fnv1.Status_STATUS_CONDITION_TRUE
+						} else {
+							cond.Status = fnv1.Status_STATUS_CONDITION_FALSE
+						}
+
+						rsp.Conditions = append(rsp.Conditions, cond)
+
+						rsp.Results = append(rsp.Results, &fnv1.Result{
+							Severity: fnv1.Severity_SEVERITY_NORMAL,
+							Message:  status.Summary,
+							Reason:   ptr.To(string(jsonStatuses)),
+						})
+
+						return rsp, nil
+					}
+
+					log.Debug("Submitted status stream", "result", result, "isError", result != "")
+					toolResults = append(toolResults, anthropic.NewToolResultBlock(block.ID, result, result != ""))
+
+				default:
+					response.Fatal(rsp, errors.Errorf("Claude tried to use unknown tool %q", block.Name))
+					return rsp, nil
+				}
+
+			// Despite the prompt, Claude insists on sending a text
+			// message explaining what it's going to do before it
+			// calls the tool. So this could be called several
+			// times, and only sometimes with YAML.
+			case anthropic.TextBlock:
+				log.Debug("Received text block from Claude", "text", block.Text)
+			}
+		}
+
+		// Claude's done using tools.
+		if len(toolResults) == 0 {
+			break
+		}
+
+		// Claude's not done using tools. Send the messages again, this
+		// time with the tool results.
+		messages = append(messages, anthropic.NewUserMessage(toolResults...))
+	}
+
+	// We should never get here.
+	response.Fatal(rsp, errors.New("Claude didn't return a YAML stream of composed resource manifests"))
 	return rsp, nil
+}
+
+// ProtoMapToJSON converts a map of string keys to proto messages into a single JSON string
+// suitable for LLM consumption. Returns the JSON-encoded string of the entire map.
+func ProtoMapToJSON(protoMap map[string]*fnv1.Resource) (string, error) {
+	result := make(map[string]interface{})
+
+	for key, protoMsg := range protoMap {
+		if protoMsg == nil {
+			result[key] = nil
+			continue
+		}
+
+		jsonBytes, err := marshaler.Marshal(protoMsg)
+		if err != nil {
+			return "", fmt.Errorf("failed to marshal proto message for key '%s': %w", key, err)
+		}
+
+		// Unmarshal JSON bytes back into interface{} using the keys output by
+		// the proto marshaler.
+		var jsonObj interface{}
+		if err := json.Unmarshal(jsonBytes, &jsonObj); err != nil {
+			return "", fmt.Errorf("failed to unmarshal JSON for key '%s': %w", key, err)
+		}
+
+		result[key] = jsonObj
+	}
+
+	// Marshal the entire map to a single JSON string
+	finalJSON, err := json.MarshalIndent(result, "", "  ")
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal final JSON: %w", err)
+	}
+
+	return string(finalJSON), nil
 }

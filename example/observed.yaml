@@ -1,0 +1,78 @@
+---
+apiVersion: rds.aws.upbound.io/v1beta1
+kind: RDSInstance
+metadata:
+  annotations:
+    crossplane.io/composition-resource-name: example-db-RDSInstance
+    upbound.io/name: example-db-RDSInstance
+  generateName: example-db-
+  name: example-db-widget
+  labels:
+    crossplane.io/composite: example-db
+  ownerReferences:
+  - apiVersion: example.crossplane.io/v1
+    blockOwnerDeletion: true
+    controller: true
+    kind: Database
+    name: example-db
+    uid: ""
+spec:
+  forProvider:
+    allocatedStorage: 20
+    dbSubnetGroupNameSelector:
+      matchLabels:
+        example-db: subnet-group
+    engine: mysql
+    engineVersion: "8.0"
+    instanceClass: db.t3.small
+    publiclyAccessible: false
+    skipFinalSnapshot: true
+    storageType: gp2
+    vpcSecurityGroupIdSelector:
+      matchLabels:
+        example-db: security-group
+  providerConfigRef:
+    name: default
+  writeConnectionSecretToRef:
+    name: example-db-rds-credentials
+status:
+  conditions:
+  - lastTransitionTime: "2025-06-04T16:00:00Z"
+    message: "Resource cannot be created: Subnet not found"
+    reason: "NotReady"
+    status: "False"
+    type: "Ready"
+  events:
+  - lastTimestamp: "2025-06-04T16:00:00Z"
+    message: "Resource cannot be created: Subnet not found"
+---
+apiVersion: ec2.aws.upbound.io/v1beta1
+kind: Subnet
+metadata:
+  labels:
+    crossplane.io/composition-resource-name: example-subnet-Subnet
+    upbound.io/name: example-subnet-Subnet
+    example-db: subnet-group
+  name: example-subnet-Subnet
+spec:
+  forProvider:
+    availabilityZone: us-east-1a
+    cidrBlock: "10.0.1.0/24"
+    region: us-east-1
+    vpcIdRef:
+      name: main-vpc
+    tags:
+      Name: private-subnet-us-east-1a
+      Environment: production
+  providerConfigRef:
+    name: aws-provider-config
+  writeConnectionSecretsToRef:
+    name: subnet-connection-details
+    namespace: crossplane-system
+status:
+  conditions:
+  - type: Ready
+    status: "False"
+    lastTransitionTime: "2025-06-04T10:30:00Z"
+    reason: CreateFailed
+    message: "Failed to create subnet: InvalidVpcID.NotFound: The vpc ID 'vpc-12345invalid' does not exist"
