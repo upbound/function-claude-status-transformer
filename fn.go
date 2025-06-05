@@ -14,6 +14,7 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 	"k8s.io/utils/ptr"
 
+	xpv1 "github.com/crossplane/crossplane-runtime/apis/common/v1"
 	"github.com/crossplane/function-sdk-go/errors"
 	"github.com/crossplane/function-sdk-go/logging"
 	fnv1 "github.com/crossplane/function-sdk-go/proto/v1"
@@ -21,6 +22,7 @@ import (
 	"github.com/crossplane/function-sdk-go/resource"
 	"github.com/crossplane/function-sdk-go/response"
 	"github.com/crossplane/function-template-go/input/v1beta1"
+	corev1 "k8s.io/api/core/v1"
 )
 
 const (
@@ -53,7 +55,12 @@ Please follow these instructions carefully:
    array, an "overallStatus" of "Ready", and a summary of "No unhealthy
    resources found".
 
-4. For each explanation, provide a JSON object with the structure shown below in
+4. Along with the set of composed resources, I will also provide you with the
+   last status you. If your summary matches the previous summary and/or
+   the resource status messages are still accurate within the status reason,
+   return the previous status unchanged.
+
+5. For each explanation, provide a JSON object with the structure shown below in
    the <example> tag. Submit the JSON object to the submit_status tool.
 </instructions>
 
@@ -86,6 +93,11 @@ If there are any existing composed resources, they will be provided here:
 {{ .Composed }}
 </composed>
 
+The last status you produced is provided here:
+<last-status>
+{{ .LastStatus }}
+</last-status>
+
 Additional input provided by the Kubernetes operator is provided here:
 
 <input>
@@ -100,6 +112,10 @@ const (
 Accepts a JSON object containing a status object. Must be valid JSON in the
 shape supplied in the <example> tag.
 `
+)
+
+const (
+	conditionTypeClaudeHealthy xpv1.ConditionType = "HealthyAccordingToClaude"
 )
 
 var marshaler = protojson.MarshalOptions{
@@ -136,6 +152,9 @@ type Variables struct {
 
 	// Observed composed resources, as a stream of YAML manifests.
 	Composed string
+
+	// Last status you produced.
+	LastStatus string
 
 	// Input - i.e. user prompt.
 	Input string
@@ -201,8 +220,20 @@ func (f *Function) RunFunction(ctx context.Context, req *fnv1.RunFunctionRequest
 		return rsp, nil
 	}
 
+	lastStatus, err := LastStatusFromObserved(req)
+	if err != nil {
+		response.Fatal(rsp, errors.Wrap(err, "cannot get last status from observed"))
+		return rsp, nil
+	}
+
+	lastStatusJSON, err := json.Marshal(lastStatus)
+	if err != nil {
+		response.Fatal(rsp, errors.Wrap(err, "cannot marshal last status to JSON"))
+		return rsp, nil
+	}
+
 	vars := &strings.Builder{}
-	if err := f.vars.Execute(vars, &Variables{Composite: string(xr), Composed: cds, Input: in.AdditionalContext}); err != nil {
+	if err := f.vars.Execute(vars, &Variables{Composite: string(xr), Composed: cds, Input: in.AdditionalContext, LastStatus: string(lastStatusJSON)}); err != nil {
 		response.Fatal(rsp, errors.Wrapf(err, "cannot build prompt from template"))
 		return rsp, nil
 	}
@@ -305,7 +336,7 @@ func (f *Function) RunFunction(ctx context.Context, req *fnv1.RunFunctionRequest
 						}
 
 						cond := &fnv1.Condition{
-							Type:    "ClaudeSummarizedStatus",
+							Type:    string(conditionTypeClaudeHealthy),
 							Message: &status.Summary,
 							Reason:  string(jsonStatuses),
 						}
@@ -392,4 +423,30 @@ func ProtoMapToJSON(protoMap map[string]*fnv1.Resource) (string, error) {
 	}
 
 	return string(finalJSON), nil
+}
+
+func LastStatusFromObserved(req *fnv1.RunFunctionRequest) (compositionStatus, error) {
+	oxr, err := request.GetObservedCompositeResource(req)
+	if err != nil {
+		return compositionStatus{}, errors.Wrap(err, "cannot get observed composite resource")
+	}
+
+	cond := oxr.Resource.GetCondition(conditionTypeClaudeHealthy)
+
+	status := compositionStatus{
+		Summary:          cond.Message,
+		ResourceStatuses: []composedResourceStatus{},
+	}
+
+	if err := json.Unmarshal([]byte(cond.Reason), &status.ResourceStatuses); err != nil {
+		return compositionStatus{}, errors.Wrap(err, "cannot unmarshal resource statuses from condition reason")
+	}
+
+	if cond.Status == corev1.ConditionTrue {
+		status.OverallStatus = "Ready"
+	} else {
+		status.OverallStatus = "NotReady"
+	}
+
+	return status, nil
 }

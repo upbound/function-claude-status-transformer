@@ -6,3 +6,20 @@ metadata:
 spec:
   replicas: 10
   image: negz/example:v1
+status:
+  conditions:
+  - lastTransitionTime: "2024-01-01T00:00:00Z"
+    reason: Available
+    status: "True"
+    type: Ready
+  - lastTransitionTime: "2024-01-01T00:00:00Z"
+    message: '2 resources are unhealthy: Subnet creation failed due to invalid VPC
+      reference, and RDS instance creation is blocked waiting for the subnet dependency'
+    reason: '[{"name":"example-subnet-Subnet","namespace":"","kind":"Subnet","apiVersion":"ec2.aws.upbound.io/v1bet
+a1","ready":false,"message":"Failed
+      to create subnet due to invalid VPC ID ''vpc-12345invalid'' - the specified
+      VPC does not exist"},{"name":"example-db-widget","namespace":"","kind":"RDSInstance","apiVersion":"rds.aws.up
+bound.io/v1beta1","ready":false,"message":"RDS
+      instance cannot be created because the required subnet is not available"}]'
+    status: "False"
+    type: HealthyAccordingToClaude
