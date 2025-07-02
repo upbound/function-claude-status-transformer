@@ -12,6 +12,7 @@ import (
 	"github.com/anthropics/anthropic-sdk-go/packages/param"
 	"github.com/tidwall/gjson"
 	"google.golang.org/protobuf/encoding/protojson"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/utils/ptr"
 
 	xpv1 "github.com/crossplane/crossplane-runtime/apis/common/v1"
@@ -22,7 +23,6 @@ import (
 	"github.com/crossplane/function-sdk-go/resource"
 	"github.com/crossplane/function-sdk-go/response"
 	"github.com/crossplane/function-template-go/input/v1beta1"
-	corev1 "k8s.io/api/core/v1"
 )
 
 const (
@@ -220,7 +220,7 @@ func (f *Function) RunFunction(ctx context.Context, req *fnv1.RunFunctionRequest
 		return rsp, nil
 	}
 
-	lastStatus, err := LastStatusFromObserved(req)
+	lastStatus, err := lastStatusFromObserved(req)
 	if err != nil {
 		response.Fatal(rsp, errors.Wrap(err, "cannot get last status from observed"))
 		return rsp, nil
@@ -425,7 +425,7 @@ func ProtoMapToJSON(protoMap map[string]*fnv1.Resource) (string, error) {
 	return string(finalJSON), nil
 }
 
-func LastStatusFromObserved(req *fnv1.RunFunctionRequest) (CompositionStatus, error) {
+func lastStatusFromObserved(req *fnv1.RunFunctionRequest) (CompositionStatus, error) {
 	oxr, err := request.GetObservedCompositeResource(req)
 	if err != nil {
 		return CompositionStatus{}, errors.Wrap(err, "cannot get observed composite resource")
