@@ -136,10 +136,10 @@ type composedResourceStatus struct {
 	Message    string `json:"message"`
 }
 
-// compositionStatus is the status of the composition as reported by Claude. It
+// CompositionStatus is the status of the composition as reported by Claude. It
 // contains the status of each composed resource, the overall status of the
 // composition, and a summary of the problems.
-type compositionStatus struct {
+type CompositionStatus struct {
 	ResourceStatuses []composedResourceStatus `json:"resourceStatuses"`
 	OverallStatus    string                   `json:"overallStatus"`
 	Summary          string                   `json:"summary"`
@@ -319,7 +319,7 @@ func (f *Function) RunFunction(ctx context.Context, req *fnv1.RunFunctionRequest
 						return rsp, nil
 					}
 
-					var status compositionStatus
+					var status CompositionStatus
 					result := ""
 					if err := json.Unmarshal([]byte(y), &status); err != nil {
 						result = err.Error()
@@ -425,21 +425,21 @@ func ProtoMapToJSON(protoMap map[string]*fnv1.Resource) (string, error) {
 	return string(finalJSON), nil
 }
 
-func LastStatusFromObserved(req *fnv1.RunFunctionRequest) (compositionStatus, error) {
+func LastStatusFromObserved(req *fnv1.RunFunctionRequest) (CompositionStatus, error) {
 	oxr, err := request.GetObservedCompositeResource(req)
 	if err != nil {
-		return compositionStatus{}, errors.Wrap(err, "cannot get observed composite resource")
+		return CompositionStatus{}, errors.Wrap(err, "cannot get observed composite resource")
 	}
 
 	cond := oxr.Resource.GetCondition(conditionTypeClaudeHealthy)
 
-	status := compositionStatus{
+	status := CompositionStatus{
 		Summary:          cond.Message,
 		ResourceStatuses: []composedResourceStatus{},
 	}
 
 	if err := json.Unmarshal([]byte(cond.Reason), &status.ResourceStatuses); err != nil {
-		return compositionStatus{}, errors.Wrap(err, "cannot unmarshal resource statuses from condition reason")
+		return CompositionStatus{}, errors.Wrap(err, "cannot unmarshal resource statuses from condition reason")
 	}
 
 	if cond.Status == corev1.ConditionTrue {
