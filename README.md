@@ -1,23 +1,58 @@
-# function-template-go
-[![CI](https://github.com/crossplane/function-template-go/actions/workflows/ci.yml/badge.svg)](https://github.com/crossplane/function-template-go/actions/workflows/ci.yml)
+# function-claude-status-transformer
+[![CI](https://github.com/upbound/unction-claude-status-transformer/actions/workflows/ci.yml/badge.svg)](https://github.com/upbound/unction-claude-status-transformer/actions/workflows/ci.yml)
 
-A template for writing a [composition function][functions] in [Go][go].
+Function-claude-status-transformer is a Crossplane Intelligent Function,
+specifically designed to help with identifying issues with your Composed
+Resources.
 
-To learn how to use this template:
+Use this function in any Crossplane Composition function pipline where you
+would like to have information communicated to end users of your API about
+issues with the Compositions.
 
-* [Follow the guide to writing a composition function in Go][function guide]
-* [Learn about how composition functions work][functions]
-* [Read the function-sdk-go package documentation][package docs]
+## Model Support:
+|Provider|Models|Notes|
+|---|---|---|
+|[Anthropic]|[claude-sonnet-4-20250514]|This will be configurable in the future.|
 
-If you just want to jump in and get started:
+## Using this function
+1. Within your Upbound project, run
+```
+up dep add xpkg.upbound.io/upbound/function-claude-status-transformer:v0.0.0-20250703165412-f44b846b3a
+```
+2. Within your Composition add a pipeline step that includes the function:
+```yaml
+apiVersion: apiextensions.crossplane.io/v1
+kind: Composition
+metadata:
+  name: xnetworks.example.upbound.io
+spec:
+  compositeTypeRef:
+    apiVersion: example.upbound.io/v1alpha1
+    kind: XNetwork
+  mode: Pipeline
+  pipeline:
+  ...
+  - functionRef:
+      name: upbound-function-claude-status-transformer
+    input:
+      apiVersion: function-claude-status-transformer.fn.crossplane.io/v1beta1
+      kind: StatusTransformation
+      additionalContext: ""
+    step: upbound-function-claude-status-transformer
+    credentials:
+    - name: claude
+      source: Secret
+      secretRef:
+        namespace: crossplane-system
+        name: api-key-anthropic
+  ...
+```
+3. Make sure to include a secret for accessing the Claude API, e.g.
+```bash
+kubectl -n crossplane-system create secret generic api-key-anthropic --from-literal=ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY}"
+```
 
-1. Replace `function-template-go` with your function in `go.mod`,
-   `package/crossplane.yaml`, and any Go imports. (You can also do this
-   automatically by running the `./init.sh <function-name>` script.)
-1. Update `input/v1beta1/` to reflect your desired input (and run `go generate ./...`)
-1. Add your logic to `RunFunction` in `fn.go`
-1. Add tests for your logic in `fn_test.go`
-1. Update this file, `README.md`, to be about your function!
+## Building locally
 
 This template uses [Go][go], [Docker][docker], and the [Crossplane CLI][cli] to
 build functions.
@@ -42,3 +77,5 @@ $ crossplane xpkg build -f package --embed-runtime-image=runtime
 [package docs]: https://pkg.go.dev/github.com/crossplane/function-sdk-go
 [docker]: https://www.docker.com
 [cli]: https://docs.crossplane.io/latest/cli
+[Anthropic]: https://docs.anthropic.com/en/docs/about-claude/models/overview
+[claude-sonnet-4-20250514]: https://docs.anthropic.com/en/docs/about-claude/models/overview#model-comparison-table
