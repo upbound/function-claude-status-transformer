@@ -1,5 +1,5 @@
 # function-claude-status-transformer
-[![CI](https://github.com/upbound/unction-claude-status-transformer/actions/workflows/ci.yml/badge.svg)](https://github.com/upbound/unction-claude-status-transformer/actions/workflows/ci.yml)
+[![CI](https://github.com/upbound/function-claude-status-transformer/actions/workflows/ci.yml/badge.svg)](https://github.com/upbound/function-claude-status-transformer/actions/workflows/ci.yml)
 
 Function-claude-status-transformer is a Crossplane Intelligent Function,
 specifically designed to help with identifying issues with your Composed
