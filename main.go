@@ -7,7 +7,8 @@ import (
 	"github.com/alecthomas/kong"
 
 	"github.com/crossplane/function-sdk-go"
-	"github.com/crossplane/function-template-go/internal/bootcheck"
+
+	"github.com/upbound/function-claude-status-transformer/internal/bootcheck"
 )
 
 func init() {
