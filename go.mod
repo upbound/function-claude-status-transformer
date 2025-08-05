@@ -1,8 +1,8 @@
 module github.com/upbound/function-claude-status-transformer
 
-go 1.23.0
+go 1.24
 
-toolchain go1.23.10
+toolchain go1.24.4
 
 require (
 	github.com/alecthomas/kong v0.9.0
@@ -15,6 +15,8 @@ require (
 )
 
 require (
+	github.com/bmatcuk/doublestar/v4 v4.0.2 // indirect
+	github.com/google/addlicense v1.1.1 // indirect
 	github.com/tidwall/match v1.1.1 // indirect
 	github.com/tidwall/pretty v1.2.1 // indirect
 	github.com/tidwall/sjson v1.2.5 // indirect
@@ -81,4 +83,9 @@ require (
 	sigs.k8s.io/json v0.0.0-20221116044647-bc3834ca7abd // indirect
 	sigs.k8s.io/structured-merge-diff/v4 v4.4.1 // indirect
 	sigs.k8s.io/yaml v1.4.0 // indirect
+)
+
+tool (
+	github.com/google/addlicense
+	sigs.k8s.io/controller-tools/cmd/controller-gen
 )
