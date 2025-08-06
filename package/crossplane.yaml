@@ -1,6 +1,6 @@
 ---
-apiVersion: meta.pkg.crossplane.io/v1beta1
+apiVersion: meta.pkg.crossplane.io/v1
 kind: Function
 metadata:
-  name: function-template-go
+  name: function-claude-status-transformer
 spec: {}
