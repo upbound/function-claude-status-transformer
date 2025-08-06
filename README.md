@@ -1,6 +1,7 @@
 # function-claude-status-transformer
 [![CI](https://github.com/upbound/function-claude-status-transformer/actions/workflows/ci.yml/badge.svg)](https://github.com/upbound/function-claude-status-transformer/actions/workflows/ci.yml)
 [![Slack](https://img.shields.io/badge/slack-upbound_crossplane-purple?logo=slack)](https://crossplane.slack.com/archives/C01TRKD4623)
+[![GitHub release](https://img.shields.io/github/release/upbound/function-claude-status-transformer/all.svg)](https://github.com/upbound/function-claude-status-transformer/releases)
 
 Function-claude-status-transformer is a Crossplane Intelligent Function,
 specifically designed to help with identifying issues with your Composed
