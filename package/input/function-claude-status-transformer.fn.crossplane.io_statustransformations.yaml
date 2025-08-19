@@ -33,6 +33,23 @@ spec:
               may reject unrecognized values.
               More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
             type: string
+          bedrock:
+            description: |-
+              AWSBedrock provides configurations for working with AWS Bedrock as a
+              model provider.
+            properties:
+              modelID:
+                default: us.anthropic.claude-sonnet-4-20250514-v1:0
+                description: ModelID is the Claude model to be used.
+                type: string
+              useFnCredentials:
+                description: |-
+                  UseFnCredentials indicates whether the function should use the
+                  credentials passed from the function request or not. Default is false.
+                type: boolean
+            required:
+            - useFnCredentials
+            type: object
           kind:
             description: |-
               Kind is a string value representing the REST resource this object represents.
