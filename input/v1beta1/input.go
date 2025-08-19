@@ -35,4 +35,20 @@ type StatusTransformation struct {
 	// AdditionalContext is additional context that the user may provide to help
 	// Claude identify the issue.
 	AdditionalContext string `json:"additionalContext"`
+
+	// AWSBedrock provides configurations for working with AWS Bedrock as a
+	// model provider.
+	// +optional
+	AWSBedrock *AWSBedrock `json:"bedrock"`
+}
+
+// AWSBedrock provides configurations for working with AWS Bedrock as a model
+// provider.
+type AWSBedrock struct {
+	// ModelID is the Claude model to be used.
+	// +kubebuilder:default="us.anthropic.claude-sonnet-4-20250514-v1:0"
+	ModelID string `json:"modelID,omitempty"`
+	// UseFnCredentials indicates whether the function should use the
+	// credentials passed from the function request or not. Default is false.
+	UseFnCredentials bool `json:"useFnCredentials"`
 }
