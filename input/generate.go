@@ -23,6 +23,7 @@
 // Remove existing and generate new input manifests
 //go:generate rm -rf ../package/input/
 //go:generate go run -tags generate sigs.k8s.io/controller-tools/cmd/controller-gen paths=./v1beta1 object:headerFile=../hack/boilerplate.go.txt crd:crdVersions=v1 output:artifacts:config=../package/input
+//go:generate go run -tags generate sigs.k8s.io/controller-tools/cmd/controller-gen paths=./v1alpha1 object:headerFile=../hack/boilerplate.go.txt crd:crdVersions=v1 output:artifacts:config=../package/input
 
 // Add license headers to all files.
 //go:generate go tool addlicense -c "Upbound Inc" -v -f ../hack/boilerplate.go.txt . ../input ../internal

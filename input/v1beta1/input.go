@@ -44,8 +44,6 @@ type StatusTransformation struct {
 
 // AWS specifies configurations for working with AWS and ulimately Bedrock.
 type AWS struct {
-	// +kubebuilder:validation:Required
-	Spec FunctionConfigSpec `json:"spec"`
 	// AWSBedrock provides configurations for working with AWS Bedrock as a
 	// model provider.
 	// +kubebuilder:validation:Required

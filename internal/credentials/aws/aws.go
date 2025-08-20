@@ -24,15 +24,16 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	corev1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/yaml"
 
 	"github.com/crossplane/crossplane-runtime/pkg/errors"
 	"github.com/crossplane/crossplane-runtime/pkg/test"
 	fnv1 "github.com/crossplane/function-sdk-go/proto/v1"
-	"github.com/crossplane/function-sdk-go/request"
-	"github.com/crossplane/function-sdk-go/resource"
 
+	"github.com/upbound/function-claude-status-transformer/input/v1alpha1"
 	"github.com/upbound/function-claude-status-transformer/input/v1beta1"
 	"github.com/upbound/function-claude-status-transformer/internal/credentials/aws/clients"
+	"github.com/upbound/function-claude-status-transformer/internal/credentials/fn"
 )
 
 // AWS provides AWS specific credential access.
@@ -40,6 +41,7 @@ type AWS struct {
 	c client.Client
 
 	cfg *v1beta1.AWS
+	req *fnv1.RunFunctionRequest
 }
 
 // New creates a new AWS.
@@ -47,6 +49,7 @@ func New(in *v1beta1.StatusTransformation, req *fnv1.RunFunctionRequest) *AWS {
 	a := &AWS{
 		c:   &fnCredClient{req: req},
 		cfg: in.AWS,
+		req: req,
 	}
 	return a
 }
@@ -54,7 +57,17 @@ func New(in *v1beta1.StatusTransformation, req *fnv1.RunFunctionRequest) *AWS {
 // GetConfig returns an aws.Config derived from the request context and
 // environment.
 func (a *AWS) GetConfig(ctx context.Context) (*aws.Config, error) {
-	return clients.GetAWSConfig(ctx, a.c, a.cfg)
+	data, err := fn.GetCredentials(a.req, "function-config")
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to retrieve function-config")
+	}
+
+	fc := &v1alpha1.FunctionConfig{}
+	if err := yaml.Unmarshal(data["config.yaml"], fc); err != nil {
+		return nil, errors.Wrap(err, "invalid FunctionConfig found in secret")
+	}
+
+	return clients.GetAWSConfig(ctx, a.c, a.cfg.Region, fc)
 }
 
 var _ client.Client = &fnCredClient{}
@@ -82,16 +95,13 @@ func (c *fnCredClient) Get(_ context.Context, key client.ObjectKey, obj client.O
 	s.SetName(key.Name)
 	s.SetNamespace(key.Namespace)
 
-	creds, err := request.GetCredentials(c.req, key.Name)
+	data, err := fn.GetCredentials(c.req, key.Name)
 	if err != nil {
-		return errors.Wrapf(err, "cannot retrieve credential from Secret with name %q", key.Name)
-	}
-	if creds.Type != resource.CredentialsTypeData {
-		return errors.Errorf("expected credential %q to be %q, got %q", key.Name, resource.CredentialsTypeData, creds.Type)
+		return errors.Wrapf(err, "failed to retrieve credentials for %q", key.Name)
 	}
 
 	// copy data from the creds map to the secret
-	maps.Copy(s.Data, creds.Data)
+	maps.Copy(s.Data, data)
 
 	return nil
 }
