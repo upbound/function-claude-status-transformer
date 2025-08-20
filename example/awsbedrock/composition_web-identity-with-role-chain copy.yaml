@@ -1,0 +1,26 @@
+apiVersion: apiextensions.crossplane.io/v1
+kind: Composition
+metadata:
+  name: transform-status-with-claude
+spec:
+  compositeTypeRef:
+    apiVersion: example.crossplane.io/v1
+    kind: App
+  mode: Pipeline
+  pipeline:
+  - step: make-claude-do-it
+    functionRef:
+      name: function-claude-status-transformer
+    input:
+      apiVersion: function-claude-status-transformer.fn.crossplane.io/v1beta1
+      kind: StatusTransformation
+      additionalContext: ""
+      aws:
+        spec:
+          assumeRoleChain:
+          - roleARN: arn:aws:iam::123456789012:role/providerexamplerole-1
+          - roleARN: arn:aws:iam::123456789012:role/providerexamplerole-2
+          credentials:
+            source: WebIdentity
+            webIdentity:
+              roleARN: arn:aws:iam::123456789012:role/providerexamplerole
