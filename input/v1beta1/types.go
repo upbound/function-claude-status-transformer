@@ -20,6 +20,8 @@ import (
 	xpv1 "github.com/crossplane/crossplane-runtime/v2/apis/common/v1"
 )
 
+// FunctionConfigSpec provides an subset of configurations that we currently
+// see in the provider-aws ProviderConfig.
 type FunctionConfigSpec struct {
 	// Credentials required to authenticate to this function.
 	Credentials FunctionCredentials `json:"credentials"`

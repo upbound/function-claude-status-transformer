@@ -14,6 +14,7 @@
 // limitations under the License.
 // */
 
+// Package aws provides credential helpers for working with AWS Bedrock APIs.
 package aws
 
 import (
@@ -21,7 +22,6 @@ import (
 	"maps"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
-
 	corev1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -73,7 +73,7 @@ type fnCredClient struct {
 // from the incoming function request, rather than going to kube. This enables
 // us to utilize some helpers from c/crossplane-runtime without needing to give
 // the function a client with API server access.
-func (c *fnCredClient) Get(ctx context.Context, key client.ObjectKey, obj client.Object, _ ...client.GetOption) error {
+func (c *fnCredClient) Get(_ context.Context, key client.ObjectKey, obj client.Object, _ ...client.GetOption) error {
 	s, ok := obj.(*corev1.Secret)
 	if !ok {
 		return errors.New("invalid object Kind supplied for retrieval, should be Secret but was not")

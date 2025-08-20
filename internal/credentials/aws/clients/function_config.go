@@ -14,6 +14,8 @@
 // limitations under the License.
 // */
 
+// Package clients provides AWS Config helpers for deriving AWS credentials
+// from the environment.
 // NOTE(tnthornton): much of this file is derived from https://github.com/crossplane-contrib/provider-upjet-aws/blob/main/internal/clients/provider_config.go
 // Modifications were made to make it work in a more sensible way from a
 // function, especially given there isn't a corresponding concept of a
@@ -36,14 +38,15 @@ import (
 	stscredstypesv2 "github.com/aws/aws-sdk-go-v2/service/sts/types"
 	"github.com/aws/smithy-go/middleware"
 	"github.com/go-ini/ini"
-	"github.com/upbound/function-claude-status-transformer/input/v1beta1"
-
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/crossplane-contrib/provider-aws/pkg/version"
 	v1 "github.com/crossplane/crossplane-runtime/v2/apis/common/v1"
 	"github.com/crossplane/crossplane-runtime/v2/pkg/errors"
 	"github.com/crossplane/crossplane-runtime/v2/pkg/resource"
+
+	"github.com/crossplane-contrib/provider-aws/pkg/version"
+
+	"github.com/upbound/function-claude-status-transformer/input/v1beta1"
 )
 
 const (
@@ -86,10 +89,10 @@ var userAgentV2 = config.WithAPIOptions([]func(*middleware.Stack) error{
 
 // GetAWSConfig produces an AWS config from the specified v1beta1.AWS that can
 // be used to authenticate to AWS.
-func GetAWSConfig(ctx context.Context, c client.Client, a *v1beta1.AWS) (*aws.Config, error) { // nolint:gocyclo
+func GetAWSConfig(ctx context.Context, c client.Client, a *v1beta1.AWS) (*aws.Config, error) { //nolint:gocyclo //This method is above our cyclomatic complexity threshold. Be wary of adding addtiional complexity.
 	var cfg *aws.Config
 	var err error
-	switch s := a.Spec.Credentials.Source; s { //nolint:exhaustive
+	switch s := a.Spec.Credentials.Source; s {
 	case authKeyIRSA:
 		cfg, err = UseDefault(ctx, a.Region)
 		if err != nil {
@@ -278,10 +281,10 @@ func CredentialsIDSecret(data []byte, profile string) (aws.Credentials, error) {
 // GetRoleChainConfig returns an aws.Config capable of doing role chaining with
 // AssumeRoleWithWebIdentity & AssumeRoles.
 func GetRoleChainConfig(ctx context.Context, fc v1beta1.FunctionConfigSpec, cfg *aws.Config) (*aws.Config, error) {
-	copy := cfg
+	ccfg := cfg
 	for _, aro := range fc.AssumeRoleChain {
 		stsAssume := stscreds.NewAssumeRoleProvider(
-			sts.NewFromConfig(*copy, stsRegionOrDefault(cfg.Region)), //nolint:contextcheck
+			sts.NewFromConfig(*ccfg, stsRegionOrDefault(cfg.Region)),
 			aws.ToString(aro.RoleARN),
 			SetAssumeRoleOptions(aro),
 		)
@@ -294,9 +297,9 @@ func GetRoleChainConfig(ctx context.Context, fc v1beta1.FunctionConfigSpec, cfg 
 		if err != nil {
 			return nil, errors.Wrap(err, errRoleChainConfig)
 		}
-		copy = &cfgWithAssumeRole
+		ccfg = &cfgWithAssumeRole
 	}
-	return copy, nil
+	return ccfg, nil
 }
 
 // GetAssumeRoleWithWebIdentityConfig returns an aws.Config capable of doing
@@ -349,15 +352,15 @@ func SetAssumeRoleOptions(aro v1beta1.AssumeRoleOptions) func(*stscreds.AssumeRo
 }
 
 // TODO: Update to use the new endpoint resolution method. SA1019: aws.Endpoint is deprecated.
-type awsEndpointResolverAdaptorWithOptions func(service, region string, options interface{}) (aws.Endpoint, error) // nolint: staticcheck
+type awsEndpointResolverAdaptorWithOptions func(service, region string, options any) (aws.Endpoint, error) //nolint:staticcheck // This API is deprecated, but we have yet to upgrade.
 
-func (a awsEndpointResolverAdaptorWithOptions) ResolveEndpoint(service, region string, options ...interface{}) (aws.Endpoint, error) { // nolint: staticcheck
+func (a awsEndpointResolverAdaptorWithOptions) ResolveEndpoint(service, region string, options ...any) (aws.Endpoint, error) { //nolint:staticcheck // This API is deprecated, but we have yet to upgrade.
 	return a(service, region, options)
 }
 
 // SetResolver parses annotations from the managed resource
 // and returns a configuration accordingly.
-func SetResolver(pc v1beta1.FunctionConfigSpec, cfg *aws.Config) (*aws.Config, error) { // nolint:gocyclo
+func SetResolver(pc v1beta1.FunctionConfigSpec, cfg *aws.Config) (*aws.Config, error) { //nolint:gocyclo //This method is above our cyclomatic complexity threshold. Be wary of adding addtiional complexity.
 	if pc.Endpoint == nil {
 		return cfg, nil
 	}
@@ -367,17 +370,17 @@ func SetResolver(pc v1beta1.FunctionConfigSpec, cfg *aws.Config) (*aws.Config, e
 		}
 		return cfg, nil
 	}
-	cfg.EndpointResolverWithOptions = awsEndpointResolverAdaptorWithOptions(func(service, region string, options interface{}) (aws.Endpoint, error) { //nolint:staticcheck
+	cfg.EndpointResolverWithOptions = awsEndpointResolverAdaptorWithOptions(func(service, region string, _ any) (aws.Endpoint, error) { //nolint:staticcheck // This API is deprecated, but we have yet to upgrade.
 		fullURL := ""
 		switch pc.Endpoint.URL.Type {
 		case URLConfigTypeStatic:
 			if pc.Endpoint.URL.Static == nil {
-				return aws.Endpoint{}, errors.New("static type is chosen but static field does not have a value") // nolint: staticcheck
+				return aws.Endpoint{}, errors.New("static type is chosen but static field does not have a value") //nolint:staticcheck // This API is deprecated, but we have yet to upgrade.
 			}
 			fullURL = aws.ToString(pc.Endpoint.URL.Static)
 		case URLConfigTypeDynamic:
 			if pc.Endpoint.URL.Dynamic == nil {
-				return aws.Endpoint{}, errors.New("dynamic type is chosen but dynamic configuration is not given") // nolint: staticcheck
+				return aws.Endpoint{}, errors.New("dynamic type is chosen but dynamic configuration is not given") //nolint:staticcheck // This API is deprecated, but we have yet to upgrade.
 			}
 			// NOTE(muvaf): IAM does not have any region.
 			if service == "IAM" {
@@ -386,9 +389,9 @@ func SetResolver(pc v1beta1.FunctionConfigSpec, cfg *aws.Config) (*aws.Config, e
 				fullURL = fmt.Sprintf("%s://%s.%s.%s", pc.Endpoint.URL.Dynamic.Protocol, strings.ToLower(service), region, pc.Endpoint.URL.Dynamic.Host)
 			}
 		default:
-			return aws.Endpoint{}, errors.New("unsupported url config type is chosen") // nolint: staticcheck
+			return aws.Endpoint{}, errors.New("unsupported url config type is chosen") //nolint:staticcheck // This API is deprecated, but we have yet to upgrade.
 		}
-		e := aws.Endpoint{ // nolint: staticcheck
+		e := aws.Endpoint{ //nolint:staticcheck // This API is deprecated, but we have yet to upgrade.
 			URL:               fullURL,
 			HostnameImmutable: aws.ToBool(pc.Endpoint.HostnameImmutable),
 			PartitionID:       aws.ToString(pc.Endpoint.PartitionID),

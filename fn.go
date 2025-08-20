@@ -24,6 +24,7 @@ import (
 	"text/template"
 
 	"github.com/anthropics/anthropic-sdk-go"
+	"github.com/anthropics/anthropic-sdk-go/bedrock"
 	"github.com/anthropics/anthropic-sdk-go/option"
 	"github.com/anthropics/anthropic-sdk-go/packages/param"
 	"github.com/tidwall/gjson"
@@ -36,15 +37,11 @@ import (
 	"github.com/crossplane/function-sdk-go/logging"
 	fnv1 "github.com/crossplane/function-sdk-go/proto/v1"
 	"github.com/crossplane/function-sdk-go/request"
-	"github.com/crossplane/function-sdk-go/resource"
 	"github.com/crossplane/function-sdk-go/response"
 
 	"github.com/upbound/function-claude-status-transformer/input/v1beta1"
-)
-
-const (
-	credName = "claude"
-	credKey  = "ANTHROPIC_API_KEY"
+	canthropic "github.com/upbound/function-claude-status-transformer/internal/credentials/anthropic"
+	caws "github.com/upbound/function-claude-status-transformer/internal/credentials/aws"
 )
 
 const system = `
@@ -206,24 +203,10 @@ func (f *Function) RunFunction(ctx context.Context, req *fnv1.RunFunctionRequest
 		return rsp, nil
 	}
 
-	c, err := request.GetCredentials(req, credName)
-	if err != nil {
-		response.Fatal(rsp, errors.Wrapf(err, "cannot get Anthropic API key from credential %q", credName))
-		return rsp, nil
+	model := anthropic.ModelClaudeSonnet4_0
+	if in.UseAWS() {
+		model = anthropic.Model(in.AWS.Bedrock.ModelID)
 	}
-	if c.Type != resource.CredentialsTypeData {
-		response.Fatal(rsp, errors.Errorf("expected credential %q to be %q, got %q", credName, resource.CredentialsTypeData, c.Type))
-		return rsp, nil
-	}
-	b, ok := c.Data[credKey]
-	if !ok {
-		response.Fatal(rsp, errors.Errorf("credential %q is missing required key %q", credName, credKey))
-		return rsp, nil
-	}
-
-	// TODO(negz): Where the heck is the newline at the end of this key
-	// coming from? Bug in crossplane render?
-	key := strings.Trim(string(b), "\n")
 
 	xr, err := marshaler.Marshal(req.GetObserved().GetComposite())
 	if err != nil {
@@ -251,13 +234,16 @@ func (f *Function) RunFunction(ctx context.Context, req *fnv1.RunFunctionRequest
 
 	vars := &strings.Builder{}
 	if err := f.vars.Execute(vars, &Variables{Composite: string(xr), Composed: cds, Input: in.AdditionalContext, LastStatus: string(lastStatusJSON)}); err != nil {
-		response.Fatal(rsp, errors.Wrapf(err, "cannot build prompt from template"))
+		response.Fatal(rsp, errors.Wrap(err, "cannot build prompt from template"))
 		return rsp, nil
 	}
 
 	log.Debug("Using prompt", "prompt", vars.String())
 
-	client := anthropic.NewClient(option.WithAPIKey(key))
+	client, err := getClient(ctx, in, req)
+	if err != nil {
+		response.Fatal(rsp, errors.Wrap(err, "cannot get LLM client"))
+	}
 
 	messages := []anthropic.MessageParam{
 		{
@@ -285,7 +271,7 @@ func (f *Function) RunFunction(ctx context.Context, req *fnv1.RunFunctionRequest
 	for {
 		message, err := client.Messages.New(ctx, anthropic.MessageNewParams{
 			MaxTokens: 1024,
-			Model:     anthropic.ModelClaudeSonnet4_0,
+			Model:     model,
 			System: []anthropic.TextBlockParam{
 				{
 					Text:         system,
@@ -466,4 +452,27 @@ func lastStatusFromObserved(req *fnv1.RunFunctionRequest) (CompositionStatus, er
 	}
 
 	return status, nil
+}
+
+// getClient returns an anthropic.Client configured to either use Anthropic's
+// APIs directly, using a standard API key, or AWS Bedrock which uses AWS
+// authentication methods (including PRODIC from Upbound).
+func getClient(ctx context.Context, in *v1beta1.StatusTransformation, req *fnv1.RunFunctionRequest) (anthropic.Client, error) {
+	if in.UseAWS() {
+		a := caws.New(in, req)
+		cfg, err := a.GetConfig(ctx)
+		if err != nil {
+			return anthropic.Client{}, errors.Wrap(err, "failed to derive AWS Config from the environment")
+		}
+
+		return anthropic.NewClient(bedrock.WithConfig(*cfg)), nil
+	}
+
+	a := canthropic.New(req)
+	key, err := a.GetAPIKey()
+	if err != nil {
+		return anthropic.Client{}, errors.Wrap(err, "failed to retrieve Anthropic API key")
+	}
+
+	return anthropic.NewClient(option.WithAPIKey(key)), nil
 }
