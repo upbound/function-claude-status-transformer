@@ -38,13 +38,11 @@ import (
 	"github.com/go-ini/ini"
 	"github.com/upbound/function-claude-status-transformer/input/v1beta1"
 
-	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/crossplane-contrib/provider-aws/pkg/version"
 	v1 "github.com/crossplane/crossplane-runtime/v2/apis/common/v1"
 	"github.com/crossplane/crossplane-runtime/v2/pkg/errors"
-	"github.com/crossplane/crossplane-runtime/v2/pkg/fieldpath"
 	"github.com/crossplane/crossplane-runtime/v2/pkg/resource"
 )
 
@@ -86,53 +84,48 @@ var userAgentV2 = config.WithAPIOptions([]func(*middleware.Stack) error{
 	awsmiddleware.AddUserAgentKeyValue("upbound-function-claude-status-transforer", version.Version),
 })
 
-// GetAWSConfigWithoutTracking produces an AWS config from the specified
-// v1beta1.ClusterProviderConfig that can be used to authenticate to AWS.
-// ProviderConfigUsage is not tracked when this function is called.
-// The caller is responsible for tracking the usage if needed.
-func GetAWSConfigWithoutTracking(ctx context.Context, c client.Client, obj runtime.Object, pc *v1beta1.FunctionConfigSpec) (*aws.Config, error) { // nolint:gocyclo
-	region, err := getRegion(obj)
-	if err != nil {
-		return nil, errors.Wrap(err, "cannot get region")
-	}
+// GetAWSConfig produces an AWS config from the specified v1beta1.AWS that can
+// be used to authenticate to AWS.
+func GetAWSConfig(ctx context.Context, c client.Client, a *v1beta1.AWS) (*aws.Config, error) { // nolint:gocyclo
 	var cfg *aws.Config
-	switch s := pc.Credentials.Source; s { //nolint:exhaustive
+	var err error
+	switch s := a.Spec.Credentials.Source; s { //nolint:exhaustive
 	case authKeyIRSA:
-		cfg, err = UseDefault(ctx, region)
+		cfg, err = UseDefault(ctx, a.Region)
 		if err != nil {
 			return nil, errors.Wrap(err, errAWSConfigIRSA)
 		}
 	case authKeyPodIdentity:
-		cfg, err = UseDefault(ctx, region)
+		cfg, err = UseDefault(ctx, a.Region)
 		if err != nil {
 			return nil, errors.Wrap(err, errAWSConfigPodIdentity)
 		}
 	case authKeyWebIdentity:
-		cfg, err = UseWebIdentityToken(ctx, region, pc, c)
+		cfg, err = UseWebIdentityToken(ctx, a.Region, a.Spec, c)
 		if err != nil {
 			return nil, errors.Wrap(err, errAWSConfigWebIdentity)
 		}
 	case authKeyUpbound:
-		cfg, err = UseUpbound(ctx, region, pc)
+		cfg, err = UseUpbound(ctx, a.Region, a.Spec)
 		if err != nil {
 			return nil, errors.Wrap(err, errAWSConfigUpbound)
 		}
 	default:
-		data, err := resource.CommonCredentialExtractor(ctx, s, c, pc.Credentials.CommonCredentialSelectors)
+		data, err := resource.CommonCredentialExtractor(ctx, s, c, a.Spec.Credentials.CommonCredentialSelectors)
 		if err != nil {
 			return nil, errors.Wrap(err, "cannot get credentials")
 		}
-		cfg, err = UseProviderSecret(ctx, data, DefaultSection, region)
+		cfg, err = UseSecret(ctx, data, DefaultSection, a.Region)
 		if err != nil {
 			return nil, errors.Wrap(err, errAWSConfig)
 		}
 	}
 
-	cfg, err = GetRoleChainConfig(ctx, pc, cfg)
+	cfg, err = GetRoleChainConfig(ctx, a.Spec, cfg)
 	if err != nil {
 		return nil, errors.Wrap(err, "cannot get credentials")
 	}
-	return SetResolver(pc, cfg)
+	return SetResolver(a.Spec, cfg)
 }
 
 // UseDefault loads the default AWS config with the specified region.
@@ -156,23 +149,19 @@ func UseDefault(ctx context.Context, region string) (*aws.Config, error) {
 }
 
 // UseWebIdentityToken calls sts.AssumeRoleWithWebIdentity using
-// the configuration supplied in ProviderConfig's
+// the configuration supplied in FunctionConfigSpec's
 // spec.credentials.assumeRoleWithWebIdentity.
-func UseWebIdentityToken(ctx context.Context, region string, pcs *v1beta1.FunctionConfigSpec, kube client.Client) (*aws.Config, error) {
-	if pcs.Credentials.WebIdentity == nil {
-		return nil, errors.New(`spec.credentials.webIdentity of ProviderConfig cannot be nil when the credential source is "WebIdentity"`)
+func UseWebIdentityToken(ctx context.Context, region string, fc v1beta1.FunctionConfigSpec, kube client.Client) (*aws.Config, error) {
+	if fc.Credentials.WebIdentity == nil {
+		return nil, errors.New(`credentials.webIdentity of FunctionConfigSpec cannot be nil when the credential source is "WebIdentity"`)
 	}
 
-	// this is to preserve backward compatibility with
-	// 0.x providers working with >=1.x ProviderConfig API
-	// TODO: when configuring via AWS environment variable support is removed
-	// tokenConfig should be mandatory and this should return an error
-	if pcs.Credentials.WebIdentity.TokenConfig == nil {
+	if fc.Credentials.WebIdentity.TokenConfig == nil {
 		cfg, err := UseDefault(ctx, region)
 		if err != nil {
 			return nil, errors.Wrap(err, "failed to get default AWS config")
 		}
-		return GetAssumeRoleWithWebIdentityConfig(ctx, cfg, *pcs.Credentials.WebIdentity, os.Getenv(envWebIdentityTokenFile))
+		return GetAssumeRoleWithWebIdentityConfig(ctx, cfg, *fc.Credentials.WebIdentity, os.Getenv(envWebIdentityTokenFile))
 	}
 
 	// new behavior with tokenConfig in
@@ -203,37 +192,35 @@ func UseWebIdentityToken(ctx context.Context, region string, pcs *v1beta1.Functi
 	tokenRetriever := &xpWebIdentityTokenRetriever{
 		ctx:         ctx,
 		kube:        kube,
-		tokenSource: pcs.Credentials.WebIdentity.TokenConfig.Source,
+		tokenSource: fc.Credentials.WebIdentity.TokenConfig.Source,
 		tokenSelector: v1.CommonCredentialSelectors{
-			Fs:        pcs.Credentials.WebIdentity.TokenConfig.Fs,
-			SecretRef: pcs.Credentials.WebIdentity.TokenConfig.SecretRef,
+			Fs:        fc.Credentials.WebIdentity.TokenConfig.Fs,
+			SecretRef: fc.Credentials.WebIdentity.TokenConfig.SecretRef,
 		},
 	}
 
-	return GetAssumeRoleWithWebIdentityConfigViaTokenRetriever(ctx, cfg, *pcs.Credentials.WebIdentity, tokenRetriever)
+	return GetAssumeRoleWithWebIdentityConfigViaTokenRetriever(ctx, cfg, *fc.Credentials.WebIdentity, tokenRetriever)
 }
 
 // UseUpbound calls sts.AssumeRoleWithWebIdentity using the configuration
-// supplied in ProviderConfig's spec.credentials.assumeRoleWithWebIdentity and
+// supplied in FunctionConfigSpec's credentials.assumeRoleWithWebIdentity and
 // the identity supplied by the injected Upbound OIDC token.
-// NOTE(hasheddan): this is the same functionality used for generic web identity
-// token role assumption, but uses fields under Upbound in the ProviderConfig
-// spec and the dedicated Upbound token injection path. This allows for clear
-// separation of intent by users when exercising the functionality, and allows
-// for uniformity across ProviderConfigs from other providers.
-func UseUpbound(ctx context.Context, region string, pcs *v1beta1.FunctionConfigSpec) (*aws.Config, error) {
+// NOTE(hasheddan): this is the same functionality used for generic web
+// identity token role assumption, but uses fields under Upbound in the
+// FunctionConfigSpec and the dedicated Upbound token injection path.
+func UseUpbound(ctx context.Context, region string, fc v1beta1.FunctionConfigSpec) (*aws.Config, error) {
 	cfg, err := UseDefault(ctx, region)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to get default AWS config ")
 	}
-	if pcs.Credentials.Upbound == nil || pcs.Credentials.Upbound.WebIdentity == nil {
-		return nil, errors.New(`spec.credentials.upbound.webIdentity of ProviderConfig cannot be nil when the credential source is "Upbound"`)
+	if fc.Credentials.Upbound == nil || fc.Credentials.Upbound.WebIdentity == nil {
+		return nil, errors.New(`credentials.upbound.webIdentity of FunctionConfigSpec cannot be nil when the credential source is "Upbound"`)
 	}
-	return GetAssumeRoleWithWebIdentityConfig(ctx, cfg, *pcs.Credentials.Upbound.WebIdentity, upboundProviderIdentityTokenFile)
+	return GetAssumeRoleWithWebIdentityConfig(ctx, cfg, *fc.Credentials.Upbound.WebIdentity, upboundProviderIdentityTokenFile)
 }
 
-// UseProviderSecret - AWS configuration which can be used to issue requests against AWS API
-func UseProviderSecret(ctx context.Context, data []byte, profile, region string) (*aws.Config, error) {
+// UseSecret - AWS configuration which can be used to issue requests against AWS API
+func UseSecret(ctx context.Context, data []byte, profile, region string) (*aws.Config, error) {
 	creds, err := CredentialsIDSecret(data, profile)
 	if err != nil {
 		return nil, errors.Wrap(err, "cannot parse credentials secret")
@@ -290,11 +277,11 @@ func CredentialsIDSecret(data []byte, profile string) (aws.Credentials, error) {
 
 // GetRoleChainConfig returns an aws.Config capable of doing role chaining with
 // AssumeRoleWithWebIdentity & AssumeRoles.
-func GetRoleChainConfig(ctx context.Context, pcs *v1beta1.FunctionConfigSpec, cfg *aws.Config) (*aws.Config, error) {
-	pCfg := cfg
-	for _, aro := range pcs.AssumeRoleChain {
+func GetRoleChainConfig(ctx context.Context, fc v1beta1.FunctionConfigSpec, cfg *aws.Config) (*aws.Config, error) {
+	copy := cfg
+	for _, aro := range fc.AssumeRoleChain {
 		stsAssume := stscreds.NewAssumeRoleProvider(
-			sts.NewFromConfig(*pCfg, stsRegionOrDefault(cfg.Region)), //nolint:contextcheck
+			sts.NewFromConfig(*copy, stsRegionOrDefault(cfg.Region)), //nolint:contextcheck
 			aws.ToString(aro.RoleARN),
 			SetAssumeRoleOptions(aro),
 		)
@@ -307,9 +294,9 @@ func GetRoleChainConfig(ctx context.Context, pcs *v1beta1.FunctionConfigSpec, cf
 		if err != nil {
 			return nil, errors.Wrap(err, errRoleChainConfig)
 		}
-		pCfg = &cfgWithAssumeRole
+		copy = &cfgWithAssumeRole
 	}
-	return pCfg, nil
+	return copy, nil
 }
 
 // GetAssumeRoleWithWebIdentityConfig returns an aws.Config capable of doing
@@ -370,7 +357,7 @@ func (a awsEndpointResolverAdaptorWithOptions) ResolveEndpoint(service, region s
 
 // SetResolver parses annotations from the managed resource
 // and returns a configuration accordingly.
-func SetResolver(pc *v1beta1.FunctionConfigSpec, cfg *aws.Config) (*aws.Config, error) { // nolint:gocyclo
+func SetResolver(pc v1beta1.FunctionConfigSpec, cfg *aws.Config) (*aws.Config, error) { // nolint:gocyclo
 	if pc.Endpoint == nil {
 		return cfg, nil
 	}
@@ -443,20 +430,6 @@ type xpWebIdentityTokenRetriever struct {
 func (x *xpWebIdentityTokenRetriever) GetIdentityToken() ([]byte, error) {
 	token, err := resource.CommonCredentialExtractor(x.ctx, x.tokenSource, x.kube, x.tokenSelector)
 	return token, errors.Wrap(err, "could not extract token from tokenSource")
-}
-
-func getRegion(obj runtime.Object) (string, error) {
-	fromMap, err := runtime.DefaultUnstructuredConverter.ToUnstructured(obj)
-	if err != nil {
-		return "", errors.Wrap(err, "cannot convert to unstructured")
-	}
-	r, err := fieldpath.Pave(fromMap).GetString("spec.forProvider.region")
-	if fieldpath.IsNotFound(err) {
-		// Region is not required for all resources, e.g. resource in "iam"
-		// group.
-		return "", nil
-	}
-	return r, err
 }
 
 // stsRegionOrDefault sets the STS client region to the passed region, or
