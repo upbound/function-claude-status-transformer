@@ -12,12 +12,13 @@ data:
       name: function-config
       namespace: crossplane-system
     spec:
+      assumeRoleChain:
+      - roleARN: arn:aws:iam::123456789012:role/providerexamplerole-1
+      - roleARN: arn:aws:iam::123456789012:role/providerexamplerole-2
       credentials:
         source: WebIdentity
         webIdentity:
           roleARN: arn:aws:iam::123456789012:role/providerexamplerole
-          tokenConfig:
-            source: Secret
 ---
 apiVersion: apiextensions.crossplane.io/v1
 kind: Composition
@@ -39,12 +40,6 @@ spec:
       aws:
         bedrock: {}
     credentials:
-    - name: example-web-identity-token-secret
-      source: Secret
-      secretRef:
-        namespace: crossplane-system
-        name: example-web-identity-token-secret
-        key: token
     - name: function-config
       source: Secret
       secretRef:

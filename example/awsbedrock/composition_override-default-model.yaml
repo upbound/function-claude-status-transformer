@@ -1,3 +1,23 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  name: function-config
+  namespace: crossplane-system
+type: Opaque
+data:
+  config.yaml: |
+    apiVersion: function-claude-status-transformer.fn.crossplane.io/v1alpha1
+    kind: FunctionConfig
+    metadata:
+      name: function-config
+      namespace: crossplane-system
+    spec:
+      credentials:
+        source: Upbound
+        upbound:
+          webIdentity:
+            roleARN: arn:aws:iam::123456789012:role/providerexamplerole
+---
 apiVersion: apiextensions.crossplane.io/v1
 kind: Composition
 metadata:
@@ -18,9 +38,9 @@ spec:
       aws:
         bedrock:
           modelID: us.anthropic.claude-sonnet-4-20250514-v1:0
-        spec:
-          credentials:
-            source: Upbound
-            upbound:
-              webIdentity:
-                roleARN: arn:aws:iam::123456789012:role/providerexamplerole
+    credentials:
+    - name: function-config
+      source: Secret
+      secretRef:
+        namespace: crossplane-system
+        name: function-config

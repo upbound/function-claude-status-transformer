@@ -23,8 +23,8 @@ import (
 
 	"github.com/crossplane/crossplane-runtime/pkg/errors"
 	fnv1 "github.com/crossplane/function-sdk-go/proto/v1"
-	"github.com/crossplane/function-sdk-go/request"
-	"github.com/crossplane/function-sdk-go/resource"
+
+	"github.com/upbound/function-claude-status-transformer/internal/credentials/fn"
 )
 
 const (
@@ -44,14 +44,12 @@ func New(req *fnv1.RunFunctionRequest) *Anthropic {
 
 // GetAPIKey retrieves the API key from the incoming RunFunctionRequest.
 func (a *Anthropic) GetAPIKey() (string, error) {
-	c, err := request.GetCredentials(a.req, credName)
+	data, err := fn.GetCredentials(a.req, credName)
 	if err != nil {
-		return "", errors.Wrapf(err, "cannot get Anthropic API key from credential %q", credName)
+		return "", errors.Wrapf(err, "failed to retrieve credential for %q", credName)
 	}
-	if c.Type != resource.CredentialsTypeData {
-		return "", errors.Errorf("expected credential %q to be %q, got %q", credName, resource.CredentialsTypeData, c.Type)
-	}
-	b, ok := c.Data[credKey]
+
+	b, ok := data[credKey]
 	if !ok {
 		return "", errors.Errorf("credential %q is missing required key %q", credName, credKey)
 	}

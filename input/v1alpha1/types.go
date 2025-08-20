@@ -14,11 +14,30 @@
 // limitations under the License.
 // */
 
-package v1beta1
+// Package v1alpha1 contains the FunctionConfig for the Function.
+// +kubebuilder:object:generate=true
+// +groupName=function-claude-status-transformer.fn.crossplane.io
+// +versionName=v1alpha1
+package v1alpha1
 
 import (
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
 	xpv1 "github.com/crossplane/crossplane-runtime/v2/apis/common/v1"
 )
+
+// +kubebuilder:object:root=true
+
+// FunctionConfig configures the function for interacting with AWS.
+// +kubebuilder:resource:scope=Namespaced
+// +kubebuilder:resource:scope=Namespaced,categories={crossplane,function,aws}
+// +kubebuilder:storageversion
+type FunctionConfig struct {
+	metav1.TypeMeta   `json:",inline"`
+	metav1.ObjectMeta `json:"metadata,omitempty"`
+
+	Spec FunctionConfigSpec `json:"spec"`
+}
 
 // FunctionConfigSpec provides an subset of configurations that we currently
 // see in the provider-aws ProviderConfig.
