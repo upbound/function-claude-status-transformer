@@ -1,6 +1,15 @@
 apiVersion: v1
 kind: Secret
 metadata:
+  name: example-aws-creds
+  namespace: crossplane-system
+type: Opaque
+data:
+  credentials: <REPLACEME>
+---
+apiVersion: v1
+kind: Secret
+metadata:
   name: function-config
   namespace: crossplane-system
 type: Opaque
@@ -16,6 +25,10 @@ data:
       - roleARN: arn:aws:iam::123456789012:role/providerexamplerole
       credentials:
         source: Secret
+        secretRef:
+          name: example-aws-creds
+          namespace: crossplane-system
+          key: credentials
 ---
 apiVersion: apiextensions.crossplane.io/v1
 kind: Composition
@@ -42,7 +55,6 @@ spec:
       secretRef:
         namespace: crossplane-system
         name: example-aws-creds
-        key: credentials
     - name: function-config
       source: Secret
       secretRef:
