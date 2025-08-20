@@ -1,0 +1,26 @@
+apiVersion: apiextensions.crossplane.io/v1
+kind: Composition
+metadata:
+  name: transform-status-with-claude
+spec:
+  compositeTypeRef:
+    apiVersion: example.crossplane.io/v1
+    kind: App
+  mode: Pipeline
+  pipeline:
+  - step: make-claude-do-it
+    functionRef:
+      name: function-claude-status-transformer
+    input:
+      apiVersion: function-claude-status-transformer.fn.crossplane.io/v1beta1
+      kind: StatusTransformation
+      additionalContext: ""
+      aws:
+        bedrock:
+          modelID: us.anthropic.claude-sonnet-4-20250514-v1:0
+        spec:
+          credentials:
+            source: Upbound
+            upbound:
+              webIdentity:
+                roleARN: arn:aws:iam::123456789012:role/providerexamplerole
