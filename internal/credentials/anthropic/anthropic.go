@@ -14,6 +14,8 @@
 // limitations under the License.
 // */
 
+// Package anthropic provides credential helpers for working with Anthropic
+// APIs.
 package anthropic
 
 import (

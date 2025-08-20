@@ -56,7 +56,7 @@ type AWS struct {
 	Region string `json:"region"`
 }
 
-// AWSBedrock provides configurations for working with AWS Bedrock as a model
+// Bedrock provides configurations for working with AWS Bedrock as a model
 // provider.
 type Bedrock struct {
 	// ModelID is the Claude model to be used.
@@ -66,6 +66,6 @@ type Bedrock struct {
 
 // UseAWS is a helper for determining if AWS configurations should be
 // considered.
-func (s StatusTransformation) UseAWS() bool {
+func (s *StatusTransformation) UseAWS() bool {
 	return s.AWS != nil
 }
