@@ -38,14 +38,22 @@ type StatusTransformation struct {
 
 	// AWS defines authentication and Bedrock configurations.
 	// +optional
+	// +kubebuilder:validation:Optional
 	AWS *AWS `json:"aws"`
 }
 
+// AWS specifies configurations for working with AWS and ulimately Bedrock.
 type AWS struct {
+	// +kubebuilder:validation:Required
 	Spec FunctionConfigSpec `json:"spec"`
 	// AWSBedrock provides configurations for working with AWS Bedrock as a
 	// model provider.
+	// +kubebuilder:validation:Required
 	Bedrock Bedrock `json:"bedrock"`
+	// Region specifies a specific region when this call is applicable.
+	// +optional
+	// +kubebuilder:validation:Optional
+	Region string `json:"region"`
 }
 
 // AWSBedrock provides configurations for working with AWS Bedrock as a model
@@ -56,6 +64,8 @@ type Bedrock struct {
 	ModelID string `json:"modelID,omitempty"`
 }
 
+// UseAWS is a helper for determining if AWS configurations should be
+// considered.
 func (s StatusTransformation) UseAWS() bool {
 	return s.AWS != nil
 }

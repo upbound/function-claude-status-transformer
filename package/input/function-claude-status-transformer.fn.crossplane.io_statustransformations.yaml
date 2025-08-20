@@ -46,6 +46,10 @@ spec:
                     description: ModelID is the Claude model to be used.
                     type: string
                 type: object
+              region:
+                description: Region specifies a specific region when this call is
+                  applicable.
+                type: string
               spec:
                 properties:
                   assumeRoleChain:
