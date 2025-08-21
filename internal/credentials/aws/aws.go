@@ -94,6 +94,7 @@ func (c *fnCredClient) Get(_ context.Context, key client.ObjectKey, obj client.O
 
 	s.SetName(key.Name)
 	s.SetNamespace(key.Namespace)
+	s.Data = make(map[string][]byte)
 
 	data, err := fn.GetCredentials(c.req, key.Name)
 	if err != nil {

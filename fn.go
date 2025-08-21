@@ -203,11 +203,6 @@ func (f *Function) RunFunction(ctx context.Context, req *fnv1.RunFunctionRequest
 		return rsp, nil
 	}
 
-	model := anthropic.ModelClaudeSonnet4_0
-	if in.UseAWS() {
-		model = anthropic.Model(in.AWS.Bedrock.ModelID)
-	}
-
 	xr, err := marshaler.Marshal(req.GetObserved().GetComposite())
 	if err != nil {
 		response.Fatal(rsp, errors.Wrap(err, "cannot convert observed XR to YAML"))
@@ -268,6 +263,8 @@ func (f *Function) RunFunction(ctx context.Context, req *fnv1.RunFunctionRequest
 			},
 		},
 	}
+
+	model := getModel(in)
 	for {
 		message, err := client.Messages.New(ctx, anthropic.MessageNewParams{
 			MaxTokens: 1024,
@@ -454,11 +451,21 @@ func lastStatusFromObserved(req *fnv1.RunFunctionRequest) (CompositionStatus, er
 	return status, nil
 }
 
+const (
+	defaultAWSRegion       = "us-east-1"
+	defaultAWSBedrockModel = "us.anthropic.claude-sonnet-4-20250514-v1:0"
+)
+
 // getClient returns an anthropic.Client configured to either use Anthropic's
 // APIs directly, using a standard API key, or AWS Bedrock which uses AWS
 // authentication methods (including PRODIC from Upbound).
 func getClient(ctx context.Context, in *v1beta1.StatusTransformation, req *fnv1.RunFunctionRequest) (anthropic.Client, error) {
 	if in.UseAWS() {
+		// Ensure the region is default if it's not provided.
+		if len(in.AWS.Region) == 0 {
+			in.AWS.Region = defaultAWSRegion
+		}
+
 		a := caws.New(in, req)
 		cfg, err := a.GetConfig(ctx)
 		if err != nil {
@@ -475,4 +482,17 @@ func getClient(ctx context.Context, in *v1beta1.StatusTransformation, req *fnv1.
 	}
 
 	return anthropic.NewClient(option.WithAPIKey(key)), nil
+}
+
+// getModel returns the anthropic.Model that should be used with the incoming
+// request. In the event of using AWS, we ensure the model is defaulted
+// correctly.
+func getModel(in *v1beta1.StatusTransformation) anthropic.Model {
+	if in.UseAWS() {
+		if len(in.AWS.Bedrock.ModelID) == 0 {
+			in.AWS.Bedrock.ModelID = defaultAWSBedrockModel
+		}
+		return anthropic.Model(in.AWS.Bedrock.ModelID)
+	}
+	return anthropic.ModelClaudeSonnet4_0
 }

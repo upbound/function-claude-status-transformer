@@ -13,7 +13,7 @@ metadata:
   name: function-config
   namespace: crossplane-system
 type: Opaque
-data:
+stringData:
   config.yaml: |
     apiVersion: function-claude-status-transformer.fn.crossplane.io/v1alpha1
     kind: FunctionConfig
