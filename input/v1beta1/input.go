@@ -51,6 +51,7 @@ type AWS struct {
 	// Region specifies a specific region when this call is applicable.
 	// +optional
 	// +kubebuilder:validation:Optional
+	// +kubebuilder:default="us-east-1"
 	Region string `json:"region"`
 }
 
