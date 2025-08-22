@@ -31,6 +31,7 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/utils/ptr"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	xpv1 "github.com/crossplane/crossplane-runtime/apis/common/v1"
 	"github.com/crossplane/function-sdk-go/errors"
@@ -180,14 +181,29 @@ type Function struct {
 
 	vars *template.Template
 	log  logging.Logger
+
+	c client.Client
+}
+
+type Option func(*Function)
+
+func WithClient(c client.Client) Option {
+	return func(f *Function) {
+		f.c = c
+	}
 }
 
 // NewFunction creates a new function powered by Claude.
-func NewFunction(log logging.Logger) *Function {
-	return &Function{
+func NewFunction(log logging.Logger, opts ...Option) *Function {
+	f := &Function{
 		log:  log,
 		vars: template.Must(template.New("vars").Parse(vars)),
 	}
+
+	for _, o := range opts {
+		o(f)
+	}
+	return f
 }
 
 // RunFunction runs the Function.
@@ -235,7 +251,7 @@ func (f *Function) RunFunction(ctx context.Context, req *fnv1.RunFunctionRequest
 
 	log.Debug("Using prompt", "prompt", vars.String())
 
-	client, err := getClient(ctx, in, req)
+	client, err := f.getClient(ctx, in, req)
 	if err != nil {
 		response.Fatal(rsp, errors.Wrap(err, "cannot get LLM client"))
 	}
@@ -459,14 +475,14 @@ const (
 // getClient returns an anthropic.Client configured to either use Anthropic's
 // APIs directly, using a standard API key, or AWS Bedrock which uses AWS
 // authentication methods (including PRODIC from Upbound).
-func getClient(ctx context.Context, in *v1beta1.StatusTransformation, req *fnv1.RunFunctionRequest) (anthropic.Client, error) {
+func (f *Function) getClient(ctx context.Context, in *v1beta1.StatusTransformation, req *fnv1.RunFunctionRequest) (anthropic.Client, error) {
 	if in.UseAWS() {
 		// Ensure the region is default if it's not provided.
 		if len(in.AWS.Region) == 0 {
 			in.AWS.Region = defaultAWSRegion
 		}
 
-		a := caws.New(in, req)
+		a := caws.New(f.c, in)
 		cfg, err := a.GetConfig(ctx)
 		if err != nil {
 			return anthropic.Client{}, errors.Wrap(err, "failed to derive AWS Config from the environment")

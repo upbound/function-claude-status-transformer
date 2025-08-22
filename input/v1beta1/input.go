@@ -27,7 +27,7 @@ import (
 // StatusTransformation can be used to provide input to this Function.
 // +kubebuilder:object:root=true
 // +kubebuilder:storageversion
-// +kubebuilder:resource:categories=crossplane
+// +kubebuilder:resource:scope=Cluster,categories={crossplane,function}
 type StatusTransformation struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
@@ -53,6 +53,10 @@ type AWS struct {
 	// +kubebuilder:validation:Optional
 	// +kubebuilder:default="us-east-1"
 	Region string `json:"region"`
+	// FunctionConfigReference specifies how the function should authenticate
+	// with AWS.
+	// +kubebuilder:default={"name": "default"}
+	FunctionConfigReference *Reference `json:"functionConfigRef,omitempty"`
 }
 
 // Bedrock provides configurations for working with AWS Bedrock as a model
@@ -61,6 +65,10 @@ type Bedrock struct {
 	// ModelID is the Claude model to be used.
 	// +kubebuilder:default="us.anthropic.claude-sonnet-4-20250514-v1:0"
 	ModelID string `json:"modelID,omitempty"`
+}
+
+type Reference struct {
+	Name string `json:"name"`
 }
 
 // UseAWS is a helper for determining if AWS configurations should be
