@@ -67,6 +67,7 @@ type Bedrock struct {
 	ModelID string `json:"modelID,omitempty"`
 }
 
+// Reference is a nameed object reference.
 type Reference struct {
 	Name string `json:"name"`
 }
