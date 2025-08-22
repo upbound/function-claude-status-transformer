@@ -1,0 +1,48 @@
+---
+apiVersion: pkg.crossplane.io/v1beta1
+kind: DeploymentRuntimeConfig
+metadata:
+  name: enable-function-configs
+spec:
+  serviceAccountTemplate:
+    metadata:
+      name: function-claude-status-transformer
+  deploymentTemplate:
+    spec:
+      selector: {}
+      template:
+        spec:
+          containers:
+          - name: package-runtime
+            args:
+            - --enable-function-configs
+---
+# functionconfig-reader provides sufficient yet narrow scoped permissions for
+# retrieving FunctionConfigs.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: functionconfig-reader
+rules:
+- apiGroups:
+  - function-claude-status-transformer.fn.crossplane.io
+  resources:
+  - functionconfigs
+  verbs:
+  - get
+  - list
+  - watch
+---
+# Bind the above ClusterRole to the function's service account.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: functionconfig-reader
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: functionconfig-reader
+subjects:
+- kind: ServiceAccount
+  name: function-claude-status-transformer
+  namespace: crossplane-system

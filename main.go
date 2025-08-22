@@ -56,7 +56,7 @@ type CLI struct {
 	Insecure           bool   `help:"Run without mTLS credentials. If you supply this flag --tls-server-certs-dir will be ignored."`
 	MaxRecvMessageSize int    `help:"Maximum size of received messages in MB." default:"4"`
 
-	EnabledFunctionConfig bool `help:"Enable support for FunctionConfig APIs."`
+	EnableFunctionConfigs bool `help:"Enable support for FunctionConfig APIs."`
 }
 
 // Run this Function.
@@ -68,7 +68,7 @@ func (c *CLI) Run() error {
 	g, ctx := errgroup.WithContext(context.Background())
 
 	opts := []Option{}
-	if c.EnabledFunctionConfig {
+	if c.EnableFunctionConfigs {
 		cfg, err := ctrl.GetConfig()
 		if err != nil {
 			return errors.Wrap(err, "failed to get the kubeconfig for the FunctionConfig manager")

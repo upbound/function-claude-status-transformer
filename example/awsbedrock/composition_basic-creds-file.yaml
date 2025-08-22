@@ -16,6 +16,8 @@ spec:
       kind: StatusTransformation
       additionalContext: ""
       aws:
+        functionConfigRef:
+          name: example-aws-creds
         bedrock: {}
     credentials:
     - name: example-aws-creds
@@ -23,8 +25,3 @@ spec:
       secretRef:
         namespace: crossplane-system
         name: example-aws-creds
-    - name: function-config
-      source: Secret
-      secretRef:
-        namespace: crossplane-system
-        name: function-config

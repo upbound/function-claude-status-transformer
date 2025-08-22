@@ -7,29 +7,6 @@ type: Opaque
 data:
   credentials: <REPLACEME>
 ---
-apiVersion: v1
-kind: Secret
-metadata:
-  name: function-config
-  namespace: crossplane-system
-type: Opaque
-stringData:
-  config.yaml: |
-    apiVersion: function-claude-status-transformer.fn.crossplane.io/v1alpha1
-    kind: FunctionConfig
-    metadata:
-      name: function-config
-      namespace: crossplane-system
-    spec:
-      assumeRoleChain:
-      - roleARN: arn:aws:iam::123456789012:role/providerexamplerole
-      credentials:
-        source: Secret
-        secretRef:
-          name: example-aws-creds
-          namespace: crossplane-system
-          key: credentials
----
 apiVersion: apiextensions.crossplane.io/v1
 kind: Composition
 metadata:
@@ -48,6 +25,8 @@ spec:
       kind: StatusTransformation
       additionalContext: ""
       aws:
+        functionConfigRef:
+          name: example-aws-creds
         bedrock: {}
     credentials:
     - name: example-aws-creds
@@ -55,8 +34,3 @@ spec:
       secretRef:
         namespace: crossplane-system
         name: example-aws-creds
-    - name: function-config
-      source: Secret
-      secretRef:
-        namespace: crossplane-system
-        name: function-config

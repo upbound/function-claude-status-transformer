@@ -1,0 +1,13 @@
+apiVersion: function-claude-status-transformer.fn.crossplane.io/v1alpha1
+kind: FunctionConfig
+metadata:
+  name: example-aws-creds
+spec:
+  assumeRoleChain:
+  - roleARN: arn:aws:iam::123456789012:role/providerexamplerole
+  credentials:
+    source: Secret
+    secretRef:
+      name: example-aws-creds
+      namespace: crossplane-system
+      key: credentials
