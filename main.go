@@ -69,6 +69,8 @@ func (c *CLI) Run() error {
 
 	opts := []Option{}
 	if c.EnableFunctionConfigs {
+		// We want to use FunctionConfigs, we need to setup our client to
+		// ensure we don't unnecessarily hit the api-server.
 		cfg, err := ctrl.GetConfig()
 		if err != nil {
 			return errors.Wrap(err, "failed to get the kubeconfig for the FunctionConfig manager")
@@ -84,6 +86,10 @@ func (c *CLI) Run() error {
 				},
 			},
 		})
+		if err != nil {
+			return errors.Wrap(err, "failed to setup FunctionConfig manager")
+		}
+
 		g.Go(func() error {
 			err := mgr.Start(ctx)
 			return errors.Wrap(ignoreCanceled(err), "failed to start manager")

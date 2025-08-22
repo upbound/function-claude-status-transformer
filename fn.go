@@ -185,8 +185,10 @@ type Function struct {
 	c client.Client
 }
 
+// Option enables overrides properties of the Function.
 type Option func(*Function)
 
+// WithClient overrides the default client for the Function.
 func WithClient(c client.Client) Option {
 	return func(f *Function) {
 		f.c = c
