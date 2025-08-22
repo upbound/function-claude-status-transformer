@@ -29,8 +29,7 @@ import (
 // +kubebuilder:object:root=true
 
 // FunctionConfig configures the function for interacting with AWS.
-// +kubebuilder:resource:scope=Namespaced
-// +kubebuilder:resource:scope=Namespaced,categories={crossplane,function,aws}
+// +kubebuilder:resource:scope=Cluster,categories={crossplane,function,aws}
 // +kubebuilder:storageversion
 type FunctionConfig struct {
 	metav1.TypeMeta   `json:",inline"`

@@ -10,11 +10,12 @@ spec:
   names:
     categories:
     - crossplane
+    - function
     kind: StatusTransformation
     listKind: StatusTransformationList
     plural: statustransformations
     singular: statustransformation
-  scope: Namespaced
+  scope: Cluster
   versions:
   - name: v1beta1
     schema:
@@ -46,7 +47,20 @@ spec:
                     description: ModelID is the Claude model to be used.
                     type: string
                 type: object
+              functionConfigRef:
+                default:
+                  name: default
+                description: |-
+                  FunctionConfigReference specifies how the function should authenticate
+                  with AWS.
+                properties:
+                  name:
+                    type: string
+                required:
+                - name
+                type: object
               region:
+                default: us-east-1
                 description: Region specifies a specific region when this call is
                   applicable.
                 type: string
