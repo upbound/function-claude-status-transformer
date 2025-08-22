@@ -1,0 +1,9 @@
+apiVersion: function-claude-status-transformer.fn.crossplane.io/v1alpha1
+kind: FunctionConfig
+metadata:
+  name: function-config
+spec:
+  credentials:
+    source: WebIdentity
+    webIdentity:
+      roleARN: arn:aws:iam::123456789012:role/providerexamplerole

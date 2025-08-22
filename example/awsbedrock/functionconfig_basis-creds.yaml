@@ -1,0 +1,11 @@
+apiVersion: function-claude-status-transformer.fn.crossplane.io/v1alpha1
+kind: FunctionConfig
+metadata:
+  name: example-aws-creds
+spec:
+  credentials:
+    source: Secret
+    secretRef:
+      name: example-aws-creds
+      namespace: crossplane-system
+      key: credentials
