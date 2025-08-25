@@ -235,19 +235,19 @@ func (f *Function) RunFunction(ctx context.Context, req *fnv1.RunFunctionRequest
 
 	lastStatus, err := lastStatusFromObserved(req)
 	if err != nil {
-		response.Fatal(rsp, errors.Wrap(err, "cannot get last status from observed"))
+		response.Warning(rsp, errors.Wrap(err, "cannot get last status from observed"))
 		return rsp, nil
 	}
 
 	lastStatusJSON, err := json.Marshal(lastStatus)
 	if err != nil {
-		response.Fatal(rsp, errors.Wrap(err, "cannot marshal last status to JSON"))
+		response.Warning(rsp, errors.Wrap(err, "cannot marshal last status to JSON"))
 		return rsp, nil
 	}
 
 	vars := &strings.Builder{}
 	if err := f.vars.Execute(vars, &Variables{Composite: string(xr), Composed: cds, Input: in.AdditionalContext, LastStatus: string(lastStatusJSON)}); err != nil {
-		response.Fatal(rsp, errors.Wrap(err, "cannot build prompt from template"))
+		response.Warning(rsp, errors.Wrap(err, "cannot build prompt from template"))
 		return rsp, nil
 	}
 
@@ -255,7 +255,8 @@ func (f *Function) RunFunction(ctx context.Context, req *fnv1.RunFunctionRequest
 
 	client, err := f.getClient(ctx, in, req)
 	if err != nil {
-		response.Fatal(rsp, errors.Wrap(err, "cannot get LLM client"))
+		response.Warning(rsp, errors.Wrap(err, "cannot get LLM client"))
+		return rsp, nil
 	}
 
 	messages := []anthropic.MessageParam{
@@ -313,7 +314,7 @@ func (f *Function) RunFunction(ctx context.Context, req *fnv1.RunFunctionRequest
 			Messages: messages,
 		})
 		if err != nil {
-			response.Fatal(rsp, errors.Wrapf(err, "cannot message Claude"))
+			response.Warning(rsp, errors.Wrapf(err, "cannot message Claude"))
 			return rsp, nil
 		}
 
@@ -380,7 +381,7 @@ func (f *Function) RunFunction(ctx context.Context, req *fnv1.RunFunctionRequest
 					toolResults = append(toolResults, anthropic.NewToolResultBlock(block.ID, result, result != ""))
 
 				default:
-					response.Fatal(rsp, errors.Errorf("Claude tried to use unknown tool %q", block.Name))
+					response.Warning(rsp, errors.Errorf("Claude tried to use unknown tool %q", block.Name))
 					return rsp, nil
 				}
 
@@ -404,7 +405,7 @@ func (f *Function) RunFunction(ctx context.Context, req *fnv1.RunFunctionRequest
 	}
 
 	// We should never get here.
-	response.Fatal(rsp, errors.New("Claude didn't return a YAML stream of composed resource manifests"))
+	response.Warning(rsp, errors.New("Claude didn't return a YAML stream of composed resource manifests"))
 	return rsp, nil
 }
 
@@ -486,7 +487,7 @@ func (f *Function) getClient(ctx context.Context, in *v1beta1.StatusTransformati
 			in.AWS.Region = defaultAWSRegion
 		}
 
-		a := caws.New(f.c, in)
+		a := caws.New(f.c, in, req)
 		cfg, err := a.GetConfig(ctx)
 		if err != nil {
 			return anthropic.Client{}, errors.Wrap(err, "failed to derive AWS Config from the environment")
