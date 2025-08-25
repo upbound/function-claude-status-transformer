@@ -456,8 +456,10 @@ func lastStatusFromObserved(req *fnv1.RunFunctionRequest) (CompositionStatus, er
 		ResourceStatuses: []composedResourceStatus{},
 	}
 
-	if err := json.Unmarshal([]byte(cond.Reason), &status.ResourceStatuses); err != nil {
-		return CompositionStatus{}, errors.Wrap(err, "cannot unmarshal resource statuses from condition reason")
+	if len(cond.Reason) != 0 {
+		if err := json.Unmarshal([]byte(cond.Reason), &status.ResourceStatuses); err != nil {
+			return CompositionStatus{}, errors.Wrap(err, "cannot unmarshal resource statuses from condition reason")
+		}
 	}
 
 	if cond.Status == corev1.ConditionTrue {
