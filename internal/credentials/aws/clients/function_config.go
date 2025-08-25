@@ -44,9 +44,8 @@ import (
 	"github.com/crossplane/crossplane-runtime/v2/pkg/errors"
 	"github.com/crossplane/crossplane-runtime/v2/pkg/resource"
 
-	"github.com/crossplane-contrib/provider-aws/pkg/version"
-
 	"github.com/upbound/function-claude-status-transformer/input/v1alpha1"
+	"github.com/upbound/function-claude-status-transformer/internal/version"
 )
 
 const (
