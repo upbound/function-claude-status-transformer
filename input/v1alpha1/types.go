@@ -247,3 +247,17 @@ type Tag struct {
 	// Value is a required field
 	Value *string `json:"value"`
 }
+
+// +kubebuilder:object:root=true
+
+// FunctionConfigList contains a list of FunctionConfigs.
+type FunctionConfigList struct {
+	metav1.TypeMeta `json:",inline"`
+	metav1.ListMeta `json:"metadata,omitempty"`
+	Items           []FunctionConfig `json:"items"`
+}
+
+//nolint:gochecknoinits,nolintlint // modifies global state
+func init() {
+	SchemeBuilder.Register(&FunctionConfig{}, &FunctionConfigList{})
+}
