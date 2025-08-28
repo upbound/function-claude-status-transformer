@@ -91,7 +91,11 @@ var userAgentV2 = config.WithAPIOptions([]func(*middleware.Stack) error{
 func GetAWSConfig(ctx context.Context, c client.Client, region string, fc *v1alpha1.FunctionConfig) (*aws.Config, error) { //nolint:gocyclo //This method is above our cyclomatic complexity threshold. Be wary of adding addtiional complexity.
 	var cfg *aws.Config
 	var err error
-	switch s := fc.Spec.Credentials.Source; s {
+	if fc.Spec.ForAWS == nil {
+		return nil, errors.New("invalid FunctionConfig, spec.forAWS is empty")
+	}
+
+	switch s := fc.Spec.ForAWS.Credentials.Source; s {
 	case authKeyIRSA:
 		cfg, err = UseDefault(ctx, region)
 		if err != nil {
@@ -113,7 +117,7 @@ func GetAWSConfig(ctx context.Context, c client.Client, region string, fc *v1alp
 			return nil, errors.Wrap(err, errAWSConfigUpbound)
 		}
 	default:
-		data, err := resource.CommonCredentialExtractor(ctx, s, c, fc.Spec.Credentials.CommonCredentialSelectors)
+		data, err := resource.CommonCredentialExtractor(ctx, s, c, fc.Spec.ForAWS.Credentials.CommonCredentialSelectors)
 		if err != nil {
 			return nil, errors.Wrap(err, "cannot get credentials")
 		}
@@ -154,16 +158,16 @@ func UseDefault(ctx context.Context, region string) (*aws.Config, error) {
 // the configuration supplied in FunctionConfigSpec's
 // spec.credentials.assumeRoleWithWebIdentity.
 func UseWebIdentityToken(ctx context.Context, region string, fc v1alpha1.FunctionConfigSpec, kube client.Client) (*aws.Config, error) {
-	if fc.Credentials.WebIdentity == nil {
+	if fc.ForAWS.Credentials.WebIdentity == nil {
 		return nil, errors.New(`credentials.webIdentity of FunctionConfigSpec cannot be nil when the credential source is "WebIdentity"`)
 	}
 
-	if fc.Credentials.WebIdentity.TokenConfig == nil {
+	if fc.ForAWS.Credentials.WebIdentity.TokenConfig == nil {
 		cfg, err := UseDefault(ctx, region)
 		if err != nil {
 			return nil, errors.Wrap(err, "failed to get default AWS config")
 		}
-		return GetAssumeRoleWithWebIdentityConfig(ctx, cfg, *fc.Credentials.WebIdentity, os.Getenv(envWebIdentityTokenFile))
+		return GetAssumeRoleWithWebIdentityConfig(ctx, cfg, *fc.ForAWS.Credentials.WebIdentity, os.Getenv(envWebIdentityTokenFile))
 	}
 
 	// new behavior with tokenConfig in
@@ -194,14 +198,14 @@ func UseWebIdentityToken(ctx context.Context, region string, fc v1alpha1.Functio
 	tokenRetriever := &xpWebIdentityTokenRetriever{
 		ctx:         ctx,
 		kube:        kube,
-		tokenSource: fc.Credentials.WebIdentity.TokenConfig.Source,
+		tokenSource: fc.ForAWS.Credentials.WebIdentity.TokenConfig.Source,
 		tokenSelector: v1.CommonCredentialSelectors{
-			Fs:        fc.Credentials.WebIdentity.TokenConfig.Fs,
-			SecretRef: fc.Credentials.WebIdentity.TokenConfig.SecretRef,
+			Fs:        fc.ForAWS.Credentials.WebIdentity.TokenConfig.Fs,
+			SecretRef: fc.ForAWS.Credentials.WebIdentity.TokenConfig.SecretRef,
 		},
 	}
 
-	return GetAssumeRoleWithWebIdentityConfigViaTokenRetriever(ctx, cfg, *fc.Credentials.WebIdentity, tokenRetriever)
+	return GetAssumeRoleWithWebIdentityConfigViaTokenRetriever(ctx, cfg, *fc.ForAWS.Credentials.WebIdentity, tokenRetriever)
 }
 
 // UseUpbound calls sts.AssumeRoleWithWebIdentity using the configuration
@@ -215,10 +219,10 @@ func UseUpbound(ctx context.Context, region string, fc v1alpha1.FunctionConfigSp
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to get default AWS config ")
 	}
-	if fc.Credentials.Upbound == nil || fc.Credentials.Upbound.WebIdentity == nil {
+	if fc.ForAWS.Credentials.Upbound == nil || fc.ForAWS.Credentials.Upbound.WebIdentity == nil {
 		return nil, errors.New(`credentials.upbound.webIdentity of FunctionConfigSpec cannot be nil when the credential source is "Upbound"`)
 	}
-	return GetAssumeRoleWithWebIdentityConfig(ctx, cfg, *fc.Credentials.Upbound.WebIdentity, upboundProviderIdentityTokenFile)
+	return GetAssumeRoleWithWebIdentityConfig(ctx, cfg, *fc.ForAWS.Credentials.Upbound.WebIdentity, upboundProviderIdentityTokenFile)
 }
 
 // UseSecret - AWS configuration which can be used to issue requests against AWS API
@@ -281,7 +285,7 @@ func CredentialsIDSecret(data []byte, profile string) (aws.Credentials, error) {
 // AssumeRoleWithWebIdentity & AssumeRoles.
 func GetRoleChainConfig(ctx context.Context, fc v1alpha1.FunctionConfigSpec, cfg *aws.Config) (*aws.Config, error) {
 	ccfg := cfg
-	for _, aro := range fc.AssumeRoleChain {
+	for _, aro := range fc.ForAWS.AssumeRoleChain {
 		stsAssume := stscreds.NewAssumeRoleProvider(
 			sts.NewFromConfig(*ccfg, stsRegionOrDefault(cfg.Region)),
 			aws.ToString(aro.RoleARN),
@@ -360,57 +364,57 @@ func (a awsEndpointResolverAdaptorWithOptions) ResolveEndpoint(service, region s
 // SetResolver parses annotations from the managed resource
 // and returns a configuration accordingly.
 func SetResolver(pc v1alpha1.FunctionConfigSpec, cfg *aws.Config) (*aws.Config, error) { //nolint:gocyclo //This method is above our cyclomatic complexity threshold. Be wary of adding addtiional complexity.
-	if pc.Endpoint == nil {
+	if pc.ForAWS.Endpoint == nil {
 		return cfg, nil
 	}
-	if pc.Endpoint.URL.Type == URLConfigTypeAuto {
-		if pc.Endpoint.PartitionID == nil || *pc.Endpoint.PartitionID == "" {
+	if pc.ForAWS.Endpoint.URL.Type == URLConfigTypeAuto {
+		if pc.ForAWS.Endpoint.PartitionID == nil || *pc.ForAWS.Endpoint.PartitionID == "" {
 			return nil, errors.Errorf("partitionId is required when the Endpoint URL type is %q", URLConfigTypeAuto)
 		}
 		return cfg, nil
 	}
 	cfg.EndpointResolverWithOptions = awsEndpointResolverAdaptorWithOptions(func(service, region string, _ any) (aws.Endpoint, error) { //nolint:staticcheck // This API is deprecated, but we have yet to upgrade.
 		fullURL := ""
-		switch pc.Endpoint.URL.Type {
+		switch pc.ForAWS.Endpoint.URL.Type {
 		case URLConfigTypeStatic:
-			if pc.Endpoint.URL.Static == nil {
+			if pc.ForAWS.Endpoint.URL.Static == nil {
 				return aws.Endpoint{}, errors.New("static type is chosen but static field does not have a value") //nolint:staticcheck // This API is deprecated, but we have yet to upgrade.
 			}
-			fullURL = aws.ToString(pc.Endpoint.URL.Static)
+			fullURL = aws.ToString(pc.ForAWS.Endpoint.URL.Static)
 		case URLConfigTypeDynamic:
-			if pc.Endpoint.URL.Dynamic == nil {
+			if pc.ForAWS.Endpoint.URL.Dynamic == nil {
 				return aws.Endpoint{}, errors.New("dynamic type is chosen but dynamic configuration is not given") //nolint:staticcheck // This API is deprecated, but we have yet to upgrade.
 			}
 			// NOTE(muvaf): IAM does not have any region.
 			if service == "IAM" {
-				fullURL = fmt.Sprintf("%s://%s.%s", pc.Endpoint.URL.Dynamic.Protocol, strings.ToLower(service), pc.Endpoint.URL.Dynamic.Host)
+				fullURL = fmt.Sprintf("%s://%s.%s", pc.ForAWS.Endpoint.URL.Dynamic.Protocol, strings.ToLower(service), pc.ForAWS.Endpoint.URL.Dynamic.Host)
 			} else {
-				fullURL = fmt.Sprintf("%s://%s.%s.%s", pc.Endpoint.URL.Dynamic.Protocol, strings.ToLower(service), region, pc.Endpoint.URL.Dynamic.Host)
+				fullURL = fmt.Sprintf("%s://%s.%s.%s", pc.ForAWS.Endpoint.URL.Dynamic.Protocol, strings.ToLower(service), region, pc.ForAWS.Endpoint.URL.Dynamic.Host)
 			}
 		default:
 			return aws.Endpoint{}, errors.New("unsupported url config type is chosen") //nolint:staticcheck // This API is deprecated, but we have yet to upgrade.
 		}
 		e := aws.Endpoint{ //nolint:staticcheck // This API is deprecated, but we have yet to upgrade.
 			URL:               fullURL,
-			HostnameImmutable: aws.ToBool(pc.Endpoint.HostnameImmutable),
-			PartitionID:       aws.ToString(pc.Endpoint.PartitionID),
-			SigningName:       aws.ToString(pc.Endpoint.SigningName),
-			SigningRegion:     aws.ToString(LateInitializeStringPtr(pc.Endpoint.SigningRegion, &region)),
-			SigningMethod:     aws.ToString(pc.Endpoint.SigningMethod),
+			HostnameImmutable: aws.ToBool(pc.ForAWS.Endpoint.HostnameImmutable),
+			PartitionID:       aws.ToString(pc.ForAWS.Endpoint.PartitionID),
+			SigningName:       aws.ToString(pc.ForAWS.Endpoint.SigningName),
+			SigningRegion:     aws.ToString(LateInitializeStringPtr(pc.ForAWS.Endpoint.SigningRegion, &region)),
+			SigningMethod:     aws.ToString(pc.ForAWS.Endpoint.SigningMethod),
 		}
 		// Only IAM does not have a region parameter and "aws-global" is used in
 		// SDK setup. However, signing region has to be us-east-1 and it needs
 		// to be set.
 		if region == "aws-global" {
-			switch aws.ToString(pc.Endpoint.PartitionID) {
+			switch aws.ToString(pc.ForAWS.Endpoint.PartitionID) {
 			case "aws-us-gov", "aws-cn", "aws-iso", "aws-iso-b":
-				e.SigningRegion = aws.ToString(LateInitializeStringPtr(pc.Endpoint.SigningRegion, &region))
+				e.SigningRegion = aws.ToString(LateInitializeStringPtr(pc.ForAWS.Endpoint.SigningRegion, &region))
 			default:
 				e.SigningRegion = "us-east-1"
 			}
 		}
-		if pc.Endpoint.Source != nil {
-			switch *pc.Endpoint.Source {
+		if pc.ForAWS.Endpoint.Source != nil {
+			switch *pc.ForAWS.Endpoint.Source {
 			case "ServiceMetadata":
 				e.Source = aws.EndpointSourceServiceMetadata
 			case "Custom":
