@@ -38,9 +38,15 @@ type FunctionConfig struct {
 	Spec FunctionConfigSpec `json:"spec"`
 }
 
-// FunctionConfigSpec provides an subset of configurations that we currently
-// see in the provider-aws ProviderConfig.
+// FunctionConfigSpec provides CSP specific configurations for the Function.
 type FunctionConfigSpec struct {
+	// ForAWS is the AWS specific FunctionConfig specification.
+	ForAWS *AWSFunctionConfig `json:"forAWS,omitempty"`
+}
+
+// AWSFunctionConfig provides an subset of configurations that we currently
+// see in the provider-aws ProviderConfig.
+type AWSFunctionConfig struct {
 	// Credentials required to authenticate to this function.
 	Credentials FunctionCredentials `json:"credentials"`
 
