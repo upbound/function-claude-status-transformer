@@ -1,8 +1,6 @@
 module github.com/upbound/function-claude-status-transformer
 
-go 1.24.0
-
-toolchain go1.24.4
+go 1.24.11
 
 require (
 	github.com/alecthomas/kong v0.9.0
