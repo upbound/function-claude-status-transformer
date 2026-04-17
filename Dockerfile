@@ -48,13 +48,13 @@ ARG TARGETARCH
 RUN --mount=target=. \
     --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
-    GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -tags ${GO_BUILD_TAG} -o /function .
+    GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -tags ${GO_BUILD_TAG} -o /tmp/function .
 
 # Produce the Function image. We use a very lightweight 'distroless' image that
 # does not include any of the build tools used in previous stages.
 FROM gcr.io/distroless/static-debian12:nonroot AS image
 WORKDIR /
-COPY --from=build /function /function
+COPY --from=build /tmp/function /function
 EXPOSE 9443
 USER nonroot:nonroot
 ENTRYPOINT ["/function"]
